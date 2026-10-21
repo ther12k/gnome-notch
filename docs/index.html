@@ -136,7 +136,7 @@ h1{
   border:1px solid var(--pill-border);border-top-width:0;
   border-radius:0 0 22px 22px;
   box-shadow:0 10px 28px rgba(0,0,0,.55);
-  width:380px;height:32px;overflow:hidden;position:relative;
+  width:470px;height:32px;overflow:hidden;position:relative;
   transition:width .3s var(--spring),height .3s var(--spring),
     background .2s,border-color .2s,box-shadow .3s;
 }
@@ -183,9 +183,20 @@ h1{
 .pg{display:flex;flex-direction:column;gap:6px}
 .pg[hidden]{display:none}
 .pg.big{font-size:14px;font-weight:700}
-.dots{display:flex;gap:5px;justify-content:center;margin-top:2px}
-.dots i{width:6px;height:6px;border-radius:3px;background:rgba(232,234,237,.22)}
-.dots i.on{background:rgba(232,234,237,.9)}
+/* quick page chooser: one glowing icon per activity */
+.pick{display:flex;gap:6px;justify-content:center;margin-top:4px}
+.pickbtn{
+  --hue:232,234,237;
+  font-family:var(--font);width:31px;height:31px;border-radius:10px;flex:none;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.04);
+  font-size:14.5px;font-weight:700;color:rgba(232,234,237,.6);cursor:pointer;
+  transition:background .15s,border-color .15s,color .15s,box-shadow .15s;
+}
+.pickbtn:hover{background:rgba(255,255,255,.13);color:var(--text)}
+.pickbtn.on{
+  background:rgba(var(--hue),.2);border-color:rgba(var(--hue),.6);
+  box-shadow:0 0 10px rgba(var(--hue),.35);color:rgb(var(--hue));
+}
 .irow{display:flex;align-items:center;gap:8px;white-space:nowrap;font-size:12.5px}
 .irow.big{font-size:14px;font-weight:700}
 .irow .grow{flex:1}
@@ -290,8 +301,8 @@ strong.c{font-weight:700}
 .notch-box[data-style="mist"]{--nb-bg:rgba(13,15,19,.62);--nb-hover:rgba(20,23,30,.86);--nb-border:rgba(255,255,255,.07);--nb-radius:0 0 26px 26px;--nb-shadow:0 8px 22px rgba(0,0,0,.4)}
 .notch-box{background:var(--nb-bg);border-color:var(--nb-border);border-radius:var(--nb-radius);box-shadow:var(--nb-shadow)}
 .notch:hover .notch-box,.notch.open .notch-box{background:var(--nb-hover)}
-.notch-box[data-width="compact"]{width:320px}
-.notch-box[data-width="wide"]{width:520px}
+.notch-box[data-width="compact"]{width:400px}
+.notch-box[data-width="wide"]{width:590px}
 .notch-box[data-width="wide"]:hover,.notch-box[data-width="wide"].open{width:520px}
 
 /* faq */
@@ -358,10 +369,12 @@ footer a:hover{color:var(--text)}
           <div class="notch-box">
             <div class="pill-row">
               <span class="status-dot"></span>
-              <span class="pct">✦ 72%</span>
-              <span class="mini"><i style="width:72%"></i></span>
+              <span class="pct" style="color:var(--warn)">✦c 72%</span>
+              <span class="mini"><i style="width:72%;background:var(--warn)"></i></span>
               <span class="reset" data-reset>↻ 2h 31m</span>
-              <span class="count">×2</span>
+              <span class="pct">✦p2 54%</span>
+              <span class="mini"><i style="width:54%"></i></span>
+              <span class="reset" style="color:var(--muted)">↻ 5h12m</span>
               <span class="spacer"></span>
               <span class="clock" data-clock>—</span>
             </div>
@@ -369,18 +382,18 @@ footer a:hover{color:var(--text)}
               <div class="pager">
                 <button class="pgbtn" id="pgPrev" aria-label="Previous activity">◀</button>
                 <div class="pages">
-                  <div class="pg">
+                  <div class="pg" data-kind="overview">
                     <div class="date">Tuesday, October 21</div>
                     <div class="irow"><span style="color:var(--text);font-weight:700">▶  Middleware</span></div>
                     <div class="irow"><span style="color:var(--accent);font-weight:700">🎯 24:59</span><span class="sub">focus</span></div>
                     <div class="irow"><strong style="color:var(--warn)">✦ 72%</strong><span class="reset" data-reset>↻ 2h 31m</span></div>
                   </div>
-                  <div class="pg" hidden>
+                  <div class="pg" data-kind="media" hidden>
                     <div class="date">Now playing</div>
                     <div class="irow big"><span class="play">▶</span><span class="track">Middleware — Overmono</span></div>
                     <div class="sub" style="margin-top:2px">controls in the click menu</div>
                   </div>
-                  <div class="pg" hidden>
+                  <div class="pg" data-kind="ai" hidden>
                     <div class="date">AI quotas</div>
                     <div class="irow">
                       <span class="tagc" style="color:var(--accent)">✦coding</span>
@@ -395,12 +408,12 @@ footer a:hover{color:var(--text)}
                       <span class="sub">↻ 5h 12m @ <span data-end2>—</span></span>
                     </div>
                   </div>
-                  <div class="pg" hidden>
+                  <div class="pg" data-kind="battery" hidden>
                     <div class="date">Battery &amp; water</div>
                     <div class="irow big"><span>🔋 87%</span><span class="bar" style="width:120px"><i style="width:87%;background:var(--ok)"></i></span></div>
                     <div class="irow big"><span>💧 1250 / 2000 ml</span><span class="bar" style="width:120px"><i style="width:62%;background:var(--accent)"></i></span></div>
                   </div>
-                  <div class="dots" id="pgDots"></div>
+                  <div class="pick" id="pgPick"></div>
                 </div>
                 <button class="pgbtn" id="pgNext" aria-label="Next activity">▶</button>
               </div>
@@ -584,24 +597,47 @@ footer a:hover{color:var(--text)}
     ends.forEach(function (c) {
       var left = Math.max(0, Math.floor((c.at - Date.now()) / 1000));
       var h = Math.floor(left / 3600), m = Math.floor((left % 3600) / 60);
-      var txt = '↻ ' + (h > 0 ? h + 'h ' + m + 'm' : m + 'm') + ' @ ' + hhmm(c.at);
-      c.els.forEach(function (e) { e.textContent = txt; });
+      var short = '↻ ' + (h > 0 ? h + 'h' + m + 'm' : m + 'm');
+      var full = short.replace('h', 'h ') + ' @ ' + hhmm(c.at);
+      c.els.forEach(function (e) {
+        // pill chips and style previews use the short form; island rows the full
+        e.textContent = e.closest('.island') ? full : short;
+      });
       if (c.endEl) c.endEl.textContent = hhmm(c.at);
     });
   }
   tick();
   setInterval(tick, 1000);
 
-  // island pager: ◀ ▶ flip between activities, dots show position
+  // island pager: ◀ ▶ flip between activities; glowing icons jump straight
   var pgs = Array.from(document.querySelectorAll('.pg'));
-  var dotsBox = document.getElementById('pgDots');
-  pgs.forEach(function () { dotsBox.appendChild(document.createElement('i')); });
-  var dots = Array.from(dotsBox.children);
+  var pick = document.getElementById('pgPick');
+  var KIND_META = {
+    overview: ['🗓', '122,184,255'],
+    media: ['🎵', '63,214,143'],
+    focus: ['🎯', '181,154,255'],
+    ai: ['✦', '245,180,85'],
+    ghome: ['🏠', '111,217,232'],
+    battery: ['🔋', '63,214,143'],
+    water: ['💧', '122,184,255'],
+  };
+  pgs.forEach(function (p, i) {
+    var meta = KIND_META[p.getAttribute('data-kind')] || ['•', '232,234,237'];
+    var b = document.createElement('button');
+    b.className = 'pickbtn';
+    b.style.setProperty('--hue', meta[1]);
+    b.textContent = meta[0];
+    b.setAttribute('aria-label', 'Show ' + (p.getAttribute('data-kind') || 'page'));
+    b.addEventListener('click', function () { showPg(i); });
+    pick.appendChild(b);
+  });
   var pgIdx = 0;
   function showPg(i) {
     pgIdx = (i + pgs.length) % pgs.length;
     pgs.forEach(function (p, k) { p.hidden = k !== pgIdx; });
-    dots.forEach(function (d, k) { d.classList.toggle('on', k === pgIdx); });
+    Array.from(pick.children).forEach(function (b, k) {
+      b.classList.toggle('on', k === pgIdx);
+    });
   }
   document.getElementById('pgPrev').addEventListener('click', function () { showPg(pgIdx - 1); });
   document.getElementById('pgNext').addEventListener('click', function () { showPg(pgIdx + 1); });

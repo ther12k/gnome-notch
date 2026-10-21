@@ -18,6 +18,7 @@ import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
+import * as ModalDialog from 'resource:///org/gnome/shell/ui/modalDialog.js';
 import { MprisPlayer } from 'resource:///org/gnome/shell/ui/mpris.js';
 
 /* ---------- constants ---------- */
@@ -337,6 +338,7 @@ class NotchBar extends PanelMenu.Button {
         this._islandCd = [];        // island-page countdown labels
         this._islandPage = 0;       // which island activity page is shown
         this._islandKind = null;    // its kind ('overview', 'media', …)
+        this._configDialog = null;  // settings popup modal (lazy)
         this._eyes = [];            // eye actors (blink loop pokes them)
         this._blinkTimer = 0;
         this._glanceTimer = 0;
@@ -412,6 +414,11 @@ class NotchBar extends PanelMenu.Button {
         }
         if (Main.panel.menuManager)
             Main.panel.menuManager.removeMenu(this.menu);
+        if (this._configDialog) {
+            try { this._configDialog.close(); } catch (e) { /* not open */ }
+            this._configDialog.destroy();
+            this._configDialog = null;
+        }
         try {
             Main.layoutManager.removeChrome(this);
         } catch (e) { /* already gone */ }
@@ -933,6 +940,7 @@ class NotchBar extends PanelMenu.Button {
 
         row.add_child(pageBox);
         row.add_child(this._pageBtn('▶', () => this._turnIslandPage(1)));
+        row.add_child(this._pageBtn('⚙', () => this.openConfig()));
         this._expandedBox.add_child(row);
     }
 
@@ -1198,6 +1206,13 @@ class NotchBar extends PanelMenu.Button {
 
     _gotoIslandPage(idx) {
         this._showIslandPage(idx, idx > this._islandPage ? 1 : -1);
+    }
+
+    openConfig() {
+        if (!this._configDialog)
+            this._configDialog = new ConfigDialog(this._app);
+        this._configDialog._build();   // refresh current state
+        this._configDialog.open(global.get_current_time());
     }
 
     // Re-ease the expanded island to the current page's size.
@@ -1478,20 +1493,12 @@ class NotchBar extends PanelMenu.Button {
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
+        const cfgDlgItem = new PopupMenu.PopupMenuItem('⚙  Settings…');
+        cfgDlgItem.connect('activate', () => this.openConfig());
+        this.menu.addMenuItem(cfgDlgItem);
+
         const cfgItem = new PopupMenu.PopupMenuItem('📝  Open settings file');
-        cfgItem.connect('activate', () => {
-            try {
-                const file = Gio.File.new_for_path(CONFIG_PATH);
-                const editor = Gio.AppInfo.get_default_for_type('application/json', false) ||
-                    Gio.AppInfo.get_default_for_type('text/plain', false);
-                if (editor)
-                    editor.launch([file], null);
-                else
-                    Gio.AppInfo.launch_default_for_uri(file.get_uri(), null);
-            } catch (e) {
-                log(`[Notch] config open failed: ${e}`);
-            }
-        });
+        cfgItem.connect('activate', () => app.openConfigFile());
         this.menu.addMenuItem(cfgItem);
 
         const reloadItem = new PopupMenu.PopupMenuItem('↻  Reload settings');
@@ -1502,6 +1509,140 @@ class NotchBar extends PanelMenu.Button {
         aboutItem.connect('activate', () =>
             Util_spawn('xdg-open https://github.com/ther12k/gnome-notch'));
         this.menu.addMenuItem(aboutItem);
+    }
+});
+
+/* ---------- settings popup modal ---------- */
+
+const ConfigDialog = GObject.registerClass(
+{ GTypeName: `NotchConfigDialog_${_IMPL_STAMP}` },
+class ConfigDialog extends ModalDialog.ModalDialog {
+    _init(app) {
+        super._init({ destroyOnClose: false });
+        this._app = app;
+        this._build();
+    }
+
+    _build() {
+        const app = this._app;
+        const cfg = app.cfg;
+        const content = this.dialogLayout.contentLayout;
+        content.destroy_all_children();
+        content.set_style(`${FONT}spacing: 9px; min-width: 430px;`);
+
+        const heading = text => content.add_child(new St.Label({
+            text,
+            style: 'font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em;' +
+                'color: rgba(232, 234, 237, 0.45); margin-top: 4px;',
+        }));
+
+        content.add_child(new St.Label({
+            text: '⚙  Notch settings',
+            style: 'font-size: 15px; font-weight: 800; color: #e8eaed;',
+        }));
+
+        heading('MODULES');
+        [
+            ['media', '🎵  Media'], ['focus', '🎯  Focus timer'],
+            ['battery', '🔋  Battery'], ['ai', '✦  AI quota'],
+            ['ghome', '🏠  Google Home'], ['water', '💧  Hydration'],
+            ['eyes', '👀  Idle eyes'],
+        ].forEach(([key, label]) => {
+            content.add_child(this._toggleRow(label, !!cfg.modules[key],
+                want => {
+                    app.setModule(key, want);
+                    this._build();
+                }));
+        });
+
+        heading('PILL STYLE');
+        const stylesBox = new St.BoxLayout({ style: 'spacing: 6px;' });
+        [['glass', 'Glass'], ['flat', 'Flat'], ['outline', 'Outline'], ['mist', 'Mist']]
+            .forEach(([key, label]) => {
+                const active = ((cfg.appearance || {}).preset || 'glass') === key;
+                stylesBox.add_child(this._choiceBtn(label, active, () => {
+                    cfg.appearance = cfg.appearance || {};
+                    cfg.appearance.preset = key;
+                    this._apply();
+                }));
+            });
+        content.add_child(stylesBox);
+
+        heading('PILL WIDTH');
+        const widthBox = new St.BoxLayout({ style: 'spacing: 6px;' });
+        [['Compact', 200], ['Regular', 260], ['Wide', 340]]
+            .forEach(([label, px]) => {
+                const active = ((cfg.appearance || {}).min_width || 260) === px;
+                widthBox.add_child(this._choiceBtn(label, active, () => {
+                    cfg.appearance = cfg.appearance || {};
+                    cfg.appearance.min_width = px;
+                    this._apply();
+                }));
+            });
+        content.add_child(widthBox);
+
+        const actions = new St.BoxLayout({ style: 'spacing: 8px; margin-top: 12px;' });
+        actions.add_child(this._choiceBtn('📝  Config file', false,
+            () => app.openConfigFile()));
+        actions.add_child(this._choiceBtn('↻  Reload', false, () => {
+            app.reloadConfig();
+            this._build();
+        }));
+        actions.add_child(this._choiceBtn('Done', true, () => this.close()));
+        content.add_child(actions);
+    }
+
+    _apply() {
+        this._app.cfgVersion++;
+        saveConfig(this._app.cfg);
+        this._app._notch && this._app._notch.render();
+        this._build();
+    }
+
+    _toggleRow(label, on, cb) {
+        const row = new St.BoxLayout({
+            style: 'spacing: 10px;',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        row.add_child(new St.Label({
+            text: label,
+            x_expand: true,
+            style: 'font-size: 12.5px; font-weight: 600; color: #e8eaed;',
+        }));
+        const btn = new St.Button({
+            label: on ? '●  on' : '○  off',
+            style: on
+                ? 'width: 64px; height: 26px; border-radius: 999px;' +
+                    'background-color: rgba(63,214,143,0.18);' +
+                    'border: 1px solid rgba(63,214,143,0.55);' +
+                    'box-shadow: 0 0 8px rgba(63,214,143,0.25);' +
+                    'font-size: 11px; font-weight: 700; color: #3fd68f;'
+                : 'width: 64px; height: 26px; border-radius: 999px;' +
+                    'background-color: rgba(255,255,255,0.05);' +
+                    'border: 1px solid rgba(255,255,255,0.10);' +
+                    'font-size: 11px; font-weight: 700; color: rgba(232,234,237,0.5);',
+        });
+        btn.connect('clicked', () => cb(!on));
+        row.add_child(btn);
+        return row;
+    }
+
+    _choiceBtn(label, active, cb) {
+        const btn = new St.Button({
+            label,
+            style: active
+                ? 'height: 30px; border-radius: 10px; padding-left: 14px; padding-right: 14px;' +
+                    'background-color: rgba(122,184,255,0.20);' +
+                    'border: 1px solid rgba(122,184,255,0.60);' +
+                    'box-shadow: 0 0 10px rgba(122,184,255,0.30);' +
+                    'font-size: 12px; font-weight: 700; color: #7ab8ff;'
+                : 'height: 30px; border-radius: 10px; padding-left: 14px; padding-right: 14px;' +
+                    'background-color: rgba(255,255,255,0.06);' +
+                    'border: 1px solid rgba(255,255,255,0.08);' +
+                    'font-size: 12px; font-weight: 600; color: rgba(232,234,237,0.75);',
+        });
+        btn.connect('clicked', cb);
+        return btn;
     }
 });
 
@@ -1728,6 +1869,20 @@ class NotchApp {
         if (key === 'ghome' && val)
             this._pollGHome();
         this._notch && this._notch.render();
+    }
+
+    openConfigFile() {
+        try {
+            const file = Gio.File.new_for_path(CONFIG_PATH);
+            const editor = Gio.AppInfo.get_default_for_type('application/json', false) ||
+                Gio.AppInfo.get_default_for_type('text/plain', false);
+            if (editor)
+                editor.launch([file], null);
+            else
+                Gio.AppInfo.launch_default_for_uri(file.get_uri(), null);
+        } catch (e) {
+            log(`[Notch] config open failed: ${e}`);
+        }
     }
 
     reloadConfig() {
