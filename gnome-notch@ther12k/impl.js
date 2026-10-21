@@ -180,6 +180,27 @@ function _resetClockText(ms) {
     return ms - Date.now() >= 86400000 ? dt.format('%a %H:%M') : dt.format('%H:%M');
 }
 
+// Accounts to surface everywhere (pill + island). summary.panel_accounts is
+// the primary source, but aiacctool's text_badge mode empties it — fall back
+// to glm.accounts so the notch always has structured chips.
+function _panelAccounts(data) {
+    if (!data)
+        return [];
+    const s = data.summary || {};
+    if (s.panel_accounts && s.panel_accounts.length)
+        return s.panel_accounts;
+    const glm = data.glm || {};
+    return (glm.accounts || [])
+        .filter(a => a.status === 'ok' && a.token_quota &&
+            a.token_quota.used_pct !== null && a.token_quota.used_pct !== undefined)
+        .map(a => ({
+            name: a.name,
+            short: a.short || String(a.name || 'glm').slice(0, 7),
+            used_pct: a.token_quota.used_pct,
+            reset_ms: a.token_quota.reset_ms,
+        }));
+}
+
 function _usedColor(pct) {
     if (pct === null || pct === undefined) return T.muted;
     if (pct >= 95) return T.err;
@@ -536,7 +557,7 @@ class NotchBar extends PanelMenu.Button {
         const f = st.focus;
         const media = p ? [p.trackTitle, p.trackArtists, p.status] : null;
         const focus = [f.phase, f.phase !== 'idle' ? Math.ceil(f.endsAt / 30000) : 0];
-        const ai = st.ai && st.ai.summary ? st.ai.summary.panel_accounts
+        const ai = st.ai ? _panelAccounts(st.ai)
             .map(a => `${a.short}:${Math.round(a.used_pct)}:${a.reset_ms}`) : null;
         const bat = st.battery ? [st.battery.pct, st.battery.charging] : null;
         return JSON.stringify([this._app.cfgVersion, media, focus, ai, bat,
@@ -556,7 +577,7 @@ class NotchBar extends PanelMenu.Button {
         this._cdLabels = [];
         this._eyes = [];
 
-        const aiAccounts = (st.ai && st.ai.summary && st.ai.summary.panel_accounts) || [];
+        const aiAccounts = _panelAccounts(st.ai);
         const worst = aiAccounts.reduce((m, a) => Math.max(m, a.used_pct || 0), 0);
         const batteryLow = st.battery && !st.battery.charging && st.battery.pct <= 20;
         const batteryCharging = st.battery && st.battery.charging;
@@ -793,8 +814,8 @@ class NotchBar extends PanelMenu.Button {
                 if (mods.focus && st.focus.phase !== 'idle')
                     line(st.focus.phase === 'work' ? '🎯' : '☕',
                         app.focusClockText(), st.focus.phase === 'work' ? T.accent : T.ok);
-                if (mods.ai && st.ai && st.ai.summary) {
-                    const acc = st.ai.summary.panel_accounts || [];
+                if (mods.ai && st.ai) {
+                    const acc = _panelAccounts(st.ai);
                     const worst = acc.reduce((m, a) => Math.max(m, a.used_pct || 0), 0);
                     const reset = acc.length ? app.fmtCountdown(
                         (acc.find(a => a.used_pct === worst) || {}).reset_ms - Date.now(), true) : '';
@@ -862,9 +883,9 @@ class NotchBar extends PanelMenu.Button {
 
         if (mods.ai && st.ai) {
             const data = st.ai;
-            // panel_accounts is what the pill shows (and what non-GLM
-            // trackers populate); glm.accounts only covers GLM logins.
-            const summaryAccs = (data.summary && data.summary.panel_accounts) || [];
+            // panel_accounts is what the pill shows; aiacctool's text_badge
+            // mode empties it, so _panelAccounts falls back to glm.accounts.
+            const summaryAccs = _panelAccounts(data);
             const glm = data.glm || {};
             const glmAccounts = (glm.accounts && glm.accounts.length > 0)
                 ? glm.accounts
