@@ -1115,7 +1115,9 @@ class NotchBar extends PanelMenu.Button {
         const pages = this._islandPages();
         if (pages.length < 2)
             return;
-        this._islandPage = (this._islandPage + dir + pages.length) % pages.length;
+        const next = (this._islandPage + dir + pages.length) % pages.length;
+        this._islandPage = next;
+        this._islandKind = pages[next].kind;   // keep this page through re-render
         this._renderIsland();
         this._relayoutIsland();
         // the pill mirrors the selected activity — refresh it too
