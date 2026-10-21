@@ -235,10 +235,21 @@ strong.c{font-weight:700}
 @media(max-width:720px){.styles{grid-template-columns:1fr}}
 .stylecard{
   border-radius:16px;border:1px solid var(--card-border);background:var(--card);
-  padding:22px;text-align:center;
+  padding:22px;text-align:center;cursor:pointer;
+  transition:border-color .2s,transform .2s,box-shadow .2s;
 }
+.stylecard:hover{transform:translateY(-3px)}
+.stylecard.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 12px 30px rgba(122,184,255,.12)}
 .stylecard .name{font-weight:700;margin-top:14px}
 .stylecard .desc{color:var(--muted);font-size:13px;margin-top:4px}
+.widths{display:flex;gap:10px;justify-content:center;align-items:center;margin-top:22px;flex-wrap:wrap}
+.wbtn{
+  font-family:var(--font);font-size:13px;font-weight:600;color:var(--muted);
+  background:var(--card);border:1px solid var(--card-border);border-radius:999px;
+  padding:7px 16px;cursor:pointer;transition:all .18s;
+}
+.wbtn:hover{color:var(--text);border-color:rgba(255,255,255,.2)}
+.wbtn.active{color:#0b1220;background:var(--accent);border-color:var(--accent);font-weight:700}
 .droplet{
   width:250px;height:30px;margin:0 auto;
   background:var(--pill-bg);
@@ -253,6 +264,17 @@ strong.c{font-weight:700}
   box-shadow:0 3px 14px rgba(0,0,0,.5);
   display:flex;align-items:center;justify-content:center;gap:8px;font-size:11.5px;font-weight:700;
 }
+
+/* style variants for the demo notch (match the extension presets) */
+.notch-box{--nb-bg:var(--pill-bg);--nb-hover:var(--pill-hover);--nb-border:var(--pill-border);--nb-radius:0 0 22px 22px;--nb-shadow:0 10px 28px rgba(0,0,0,.55)}
+.notch-box[data-style="flat"]{--nb-bg:rgba(15,17,23,.92);--nb-hover:rgba(25,28,38,.97);--nb-border:transparent;--nb-radius:17px;--nb-shadow:0 3px 14px rgba(0,0,0,.5)}
+.notch-box[data-style="outline"]{--nb-bg:rgba(10,12,16,.45);--nb-hover:rgba(16,19,26,.75);--nb-border:rgba(255,255,255,.26);--nb-radius:0 0 20px 20px;--nb-shadow:0 6px 18px rgba(0,0,0,.35)}
+.notch-box[data-style="mist"]{--nb-bg:rgba(13,15,19,.62);--nb-hover:rgba(20,23,30,.86);--nb-border:rgba(255,255,255,.07);--nb-radius:0 0 26px 26px;--nb-shadow:0 8px 22px rgba(0,0,0,.4)}
+.notch-box{background:var(--nb-bg);border-color:var(--nb-border);border-radius:var(--nb-radius);box-shadow:var(--nb-shadow)}
+.notch:hover .notch-box,.notch.open .notch-box{background:var(--nb-hover)}
+.notch-box[data-width="compact"]{width:300px}
+.notch-box[data-width="wide"]{width:396px}
+.notch-box[data-width="wide"]:hover,.notch-box[data-width="wide"].open{width:396px}
 
 /* faq */
 .faq{max-width:720px;margin:40px auto 0;display:flex;flex-direction:column;gap:10px}
@@ -431,19 +453,35 @@ footer a:hover{color:var(--text)}
 <section id="styles">
   <div class="wrap">
     <p class="kicker">Appearance</p>
-    <h2>Pick your droplet.</h2>
-    <p class="lede">Switch anytime from the click menu — 🎨 Pill style.</p>
+    <h2>Make the bar yours.</h2>
+    <p class="lede">Four presets and three widths — click any card to restyle the notch at the top of this page, then set it for real from the click menu (🎨 Pill style · ↔ Pill width).</p>
     <div class="styles">
-      <div class="stylecard">
+      <div class="stylecard" data-style-btn="glass" role="button" tabindex="0">
         <div class="droplet"><span class="status-dot"></span><span class="pct">✦ 72%</span><span class="mini"><i style="width:72%"></i></span><span class="reset" data-reset>↻ 2h 31m</span></div>
         <div class="name">Glass droplet <span class="dim" style="font-weight:400">· default</span></div>
         <div class="desc">Flat top, rounded bottom, soft edge glow and a deep drop shadow — the macOS look.</div>
       </div>
-      <div class="stylecard">
+      <div class="stylecard" data-style-btn="flat" role="button" tabindex="0">
         <div class="flatpill"><span class="status-dot"></span><span class="pct">✦ 72%</span><span class="mini"><i style="width:72%"></i></span><span class="reset" data-reset>↻ 2h 31m</span></div>
         <div class="name">Flat pill</div>
         <div class="desc">A quiet, fully rounded pill for darker, minimal setups.</div>
       </div>
+      <div class="stylecard" data-style-btn="outline" role="button" tabindex="0">
+        <div class="droplet" style="background:rgba(10,12,16,.45);border-color:rgba(255,255,255,.26);border-radius:0 0 20px 20px;box-shadow:0 6px 18px rgba(0,0,0,.35)"><span class="status-dot"></span><span class="pct">✦ 72%</span><span class="mini"><i style="width:72%"></i></span><span class="reset" data-reset>↻ 2h 31m</span></div>
+        <div class="name">Outline</div>
+        <div class="desc">Nearly transparent — just a crisp edge over your wallpaper.</div>
+      </div>
+      <div class="stylecard" data-style-btn="mist" role="button" tabindex="0">
+        <div class="droplet" style="background:rgba(13,15,19,.62);border-color:rgba(255,255,255,.07);border-radius:0 0 26px 26px;box-shadow:0 8px 22px rgba(0,0,0,.4)"><span class="status-dot"></span><span class="pct">✦ 72%</span><span class="mini"><i style="width:72%"></i></span><span class="reset" data-reset>↻ 2h 31m</span></div>
+        <div class="name">Mist</div>
+        <div class="desc">A softer, lighter droplet that floats on subtle wallpapers.</div>
+      </div>
+    </div>
+    <div class="widths">
+      <span class="dim" style="font-size:13px">Width:</span>
+      <button class="wbtn" data-width-btn="compact">Compact</button>
+      <button class="wbtn active" data-width-btn="regular">Regular</button>
+      <button class="wbtn" data-width-btn="wide">Wide</button>
     </div>
   </div>
 </section>
@@ -529,6 +567,32 @@ footer a:hover{color:var(--text)}
       notch.classList.toggle('open');
       e.preventDefault();
     }
+  });
+
+  // "Make the bar yours": restyle the hero notch from the style cards
+  var box = notch.querySelector('.notch-box');
+  function selectStyle(key) {
+    box.setAttribute('data-style', key);
+    document.querySelectorAll('[data-style-btn]').forEach(function (c) {
+      c.classList.toggle('selected', c.getAttribute('data-style-btn') === key);
+    });
+  }
+  document.querySelectorAll('[data-style-btn]').forEach(function (card) {
+    card.addEventListener('click', function () { selectStyle(card.getAttribute('data-style-btn')); });
+    card.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectStyle(card.getAttribute('data-style-btn')); }
+    });
+  });
+  selectStyle('glass');
+
+  function selectWidth(key) {
+    box.setAttribute('data-width', key);
+    document.querySelectorAll('[data-width-btn]').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-width-btn') === key);
+    });
+  }
+  document.querySelectorAll('[data-width-btn]').forEach(function (b) {
+    b.addEventListener('click', function () { selectWidth(b.getAttribute('data-width-btn')); });
   });
 })();
 </script>

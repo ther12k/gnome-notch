@@ -25,9 +25,11 @@ Windows. The AI-quota module spun out of my internal AI usage monitor
 | **Idle eyes** | blink and glance when everything is calm | — | — |
 
 Hover is a compact, read-only glance. Click the pill to open actions and
-settings: toggle **🧩 Modules**, choose **🎨 Pill style**, or switch **AI chips
-in pill** on/off. The default glass style has the droplet edge and glow. Settings
-live in `~/.config/gnome-notch/config.json`; after editing the file, choose
+settings: toggle **🧩 Modules**, pick a **🎨 Pill style** — glass droplet
+(glow border, default), flat pill, outline or mist — choose the **↔ Pill width**
+(compact / regular / wide), or switch **AI chips in pill** on/off. Settings
+live in `~/.config/gnome-notch/config.json` (`appearance.preset`,
+`appearance.min_width`); after editing the file, choose
 **↻ Reload settings** in the menu to apply changes without restarting GNOME Shell.
 
 ## Install

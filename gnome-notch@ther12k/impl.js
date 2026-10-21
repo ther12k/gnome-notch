@@ -31,7 +31,9 @@ const FONT = 'font-family: "Inter","Cantarell","Ubuntu Sans",sans-serif;';
 
 /* Pill presets. "glass" is the aiacctool droplet: flat top, rounded
  * bottom, faint white edge (the glow border) and a deep drop shadow.
- * "flat" is a quiet, fully-rounded pill without the border. */
+ * "flat" is a quiet, fully-rounded pill without the border.
+ * "outline" keeps the bar nearly transparent with a crisp edge.
+ * "mist" is a softer, lighter droplet for subtle wallpapers. */
 const PILL_STYLES = {
     glass: {
         base: 'background: rgba(13, 15, 19, 0.90);' +
@@ -57,6 +59,40 @@ const PILL_STYLES = {
             'box-shadow: 0 6px 22px rgba(0, 0, 0, 0.6);',
         alert: 'background: rgba(62, 24, 30, 0.95); border-radius: 17px;' +
             'box-shadow: 0 3px 16px rgba(244, 113, 116, 0.35);',
+    },
+    outline: {
+        base: 'background: rgba(10, 12, 16, 0.45);' +
+            'border-radius: 0px 0px 20px 20px;' +
+            'border: 1px solid rgba(255, 255, 255, 0.22);' +
+            'border-top-width: 0px;' +
+            'box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);',
+        hover: 'background: rgba(16, 19, 26, 0.75);' +
+            'border-radius: 0px 0px 20px 20px;' +
+            'border: 1px solid rgba(255, 255, 255, 0.30);' +
+            'border-top-width: 0px;' +
+            'box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);',
+        alert: 'background: rgba(28, 22, 12, 0.70);' +
+            'border-radius: 0px 0px 20px 20px;' +
+            'border: 1px solid rgba(253, 214, 99, 0.45);' +
+            'border-top-width: 0px;' +
+            'box-shadow: 0 0 20px rgba(253, 214, 99, 0.35);',
+    },
+    mist: {
+        base: 'background: rgba(13, 15, 19, 0.62);' +
+            'border-radius: 0px 0px 26px 26px;' +
+            'border: 1px solid rgba(255, 255, 255, 0.07);' +
+            'border-top-width: 0px;' +
+            'box-shadow: 0 8px 22px rgba(0, 0, 0, 0.40);',
+        hover: 'background: rgba(20, 23, 30, 0.86);' +
+            'border-radius: 0px 0px 26px 26px;' +
+            'border: 1px solid rgba(255, 255, 255, 0.14);' +
+            'border-top-width: 0px;' +
+            'box-shadow: 0 12px 28px rgba(0, 0, 0, 0.50);',
+        alert: 'background: rgba(26, 21, 15, 0.80);' +
+            'border-radius: 0px 0px 26px 26px;' +
+            'border: 1px solid rgba(253, 214, 99, 0.28);' +
+            'border-top-width: 0px;' +
+            'box-shadow: 0 0 18px rgba(253, 214, 99, 0.30);',
     },
 };
 
@@ -85,7 +121,7 @@ const DEFAULT_CONFIG = {
     },
     clock_24h: true,
     pill_mode: 'ai',            // 'ai' = GLM chips like aiacctool, 'clock' = clock-first
-    appearance: { preset: 'glass' },
+    appearance: { preset: 'glass', min_width: 120 },
     focus: { work_min: 25, break_min: 5 },
     water_goal_ml: 2000,
     water: { date: '', ml: 0 },
@@ -347,10 +383,14 @@ class NotchBar extends PanelMenu.Button {
         this._recenter();
     }
 
+    _pillMinW() {
+        return Math.max(120, (this._app.cfg.appearance || {}).min_width || 120);
+    }
+
     _applyRestingSize() {
         const [, natW] = this._collapsedBox.get_preferred_width(-1);
         const [, natH] = this._collapsedBox.get_preferred_height(natW);
-        this.set_size(Math.max(120, natW + 2 * PAD_X), this._collapsedH);
+        this.set_size(Math.max(this._pillMinW(), natW + 2 * PAD_X), this._collapsedH);
         this._collapsedBox.set_position(PAD_X,
             Math.max(0, Math.round((this._collapsedH - natH) / 2)));
     }
@@ -436,7 +476,7 @@ class NotchBar extends PanelMenu.Button {
         const [, natW] = this._collapsedBox.get_preferred_width(-1);
         const [, natH] = this._collapsedBox.get_preferred_height(natW);
         this.ease({
-            width: Math.max(120, natW + 2 * PAD_X),
+            width: Math.max(this._pillMinW(), natW + 2 * PAD_X),
             height: this._collapsedH,
             duration: 260,
             mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
@@ -994,12 +1034,13 @@ class NotchBar extends PanelMenu.Button {
 
         const styleSub = new PopupMenu.PopupSubMenuMenuItem('🎨  Pill style');
         const cur = (app.cfg.appearance || {}).preset || 'glass';
-        [['glass', 'Glass droplet (glow border)'], ['flat', 'Flat pill']]
+        [['glass', 'Glass droplet (glow border)'], ['flat', 'Flat pill'],
+            ['outline', 'Outline (transparent)'], ['mist', 'Mist (soft)']]
             .forEach(([key, label]) => {
                 const item = new PopupMenu.PopupMenuItem(
                     (cur === key ? '●  ' : '○  ') + label);
                 item.connect('activate', () => {
-                    app.cfg.appearance = { preset: key };
+                    app.cfg.appearance.preset = key;
                     app.cfgVersion++;
                     saveConfig(app.cfg);
                     this._applyPillStyle();
@@ -1008,6 +1049,25 @@ class NotchBar extends PanelMenu.Button {
                 styleSub.menu.addMenuItem(item);
             });
         this.menu.addMenuItem(styleSub);
+
+        const widthSub = new PopupMenu.PopupSubMenuMenuItem('↔  Pill width');
+        const curW = (app.cfg.appearance || {}).min_width || 120;
+        [['compact', 120], ['regular', 190], ['wide', 260]]
+            .forEach(([label, px]) => {
+                const item = new PopupMenu.PopupMenuItem(
+                    (curW === px ? '●  ' : '○  ') +
+                    `${label[0].toUpperCase()}${label.slice(1)} (${px}px)`);
+                item.connect('activate', () => {
+                    app.cfg.appearance.min_width = px;
+                    app.cfgVersion++;
+                    saveConfig(app.cfg);
+                    if (!this._expanded)
+                        this._applyRestingSize();
+                    this._buildMenu();
+                });
+                widthSub.menu.addMenuItem(item);
+            });
+        this.menu.addMenuItem(widthSub);
 
         const pillSw = new PopupMenu.PopupSwitchMenuItem('✦  AI chips in pill',
             app.cfg.pill_mode !== 'clock');
