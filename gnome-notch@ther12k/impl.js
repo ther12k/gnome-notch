@@ -261,7 +261,12 @@ class MediaWatcher {
 
 /* ---------- the notch bar ---------- */
 
+// deployed as impl-<timestamp>.js; the stamp keeps the GType name unique
+// across hot-reloads within one shell session
+const _IMPL_STAMP = (import.meta.url.match(/impl-(\d+)\.js$/) || [])[1] || 'src';
+
 const NotchBar = GObject.registerClass(
+{ GTypeName: `NotchBar_${_IMPL_STAMP}` },
 class NotchBar extends PanelMenu.Button {
     _init(app) {
         super._init(0.5, 'Notch');
