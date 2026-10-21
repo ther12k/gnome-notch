@@ -698,37 +698,41 @@ class NotchBar extends PanelMenu.Button {
                 y_align: Clutter.ActorAlign.CENTER,
             }));
 
-            const pct = Math.round(worst);
-            const worstAccount = aiAccounts.reduce((current, account) =>
-                !current || (account.used_pct || 0) > (current.used_pct || 0)
-                    ? account : current, null);
-            const chip = new St.BoxLayout({
-                y_align: Clutter.ActorAlign.CENTER,
-                style: 'spacing: 7px;',
-            });
-            chip.add_child(new St.Label({
-                text: `✦ ${pct}%`,
-                y_align: Clutter.ActorAlign.CENTER,
-                style: `${FONT}font-size: 12.5px; font-weight: 700; color: ${_usedColor(pct)};`,
-            }));
-            chip.add_child(this._miniBar(pct, _usedColor(pct), 44));
-            if (worstAccount && worstAccount.reset_ms) {
-                const until = worstAccount.reset_ms;
-                const countdown = new St.Label({
-                    text: `↻ ${app.fmtCountdown(until - Date.now())} @ ${_resetClockText(until)}`,
+            // aiacctool-style: one chip per account (label + bar + reset),
+            // so both bars show by default
+            aiAccounts.slice(0, 3).forEach((a, i) => {
+                const pct = Math.round(a.used_pct);
+                const exhausted = a.used_pct >= th.exhaust_pct;
+                const color = exhausted ? T.err
+                    : ACCOUNT_COLORS[i % ACCOUNT_COLORS.length];
+                const chip = new St.BoxLayout({
                     y_align: Clutter.ActorAlign.CENTER,
-                    style: `${FONT}font-size: 12.5px; font-weight: 700; color: ${T.text};`,
+                    style: 'spacing: 6px;',
                 });
-                this._cdLabels.push({ label: countdown, until, clock: true });
-                chip.add_child(countdown);
-            }
-            if (aiAccounts.length > 1)
+                const tag = a.short ? `${String(a.short).slice(0, 7)} ` : '';
                 chip.add_child(new St.Label({
-                    text: `×${aiAccounts.length}`,
+                    text: `✦${tag}${pct}%`,
+                    y_align: Clutter.ActorAlign.CENTER,
+                    style: `${FONT}font-size: 12.5px; font-weight: 700; color: ${color};`,
+                }));
+                chip.add_child(this._miniBar(pct, _usedColor(pct), 40));
+                if (a.reset_ms) {
+                    const cd = new St.Label({
+                        text: `↻ ${app.fmtCountdown(a.reset_ms - Date.now(), true)}`,
+                        y_align: Clutter.ActorAlign.CENTER,
+                        style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${T.text};`,
+                    });
+                    this._cdLabels.push({ label: cd, until: a.reset_ms, clock: false });
+                    chip.add_child(cd);
+                }
+                this._collapsedBox.add_child(chip);
+            });
+            if (aiAccounts.length > 3)
+                this._collapsedBox.add_child(new St.Label({
+                    text: `+${aiAccounts.length - 3}`,
                     y_align: Clutter.ActorAlign.CENTER,
                     style: `${FONT}font-size: 10px; color: ${T.muted};`,
                 }));
-            this._collapsedBox.add_child(chip);
         } else {
             /* clock-first pill: eyes when calm, else a status dot */
             if (this._alert) {
