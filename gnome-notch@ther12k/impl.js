@@ -29,13 +29,35 @@ const PAD_BOTTOM = 11;
 
 const FONT = 'font-family: "Inter","Cantarell","Ubuntu Sans",sans-serif;';
 
-const NOTCH_STYLE = {
-    base: `background: rgba(15, 17, 23, 0.92); border-radius: 17px;` +
-        ` box-shadow: 0 3px 14px rgba(0, 0, 0, 0.5);`,
-    hover: `background: rgba(25, 28, 38, 0.97); border-radius: 17px;` +
-        ` box-shadow: 0 6px 22px rgba(0, 0, 0, 0.6);`,
-    alert: `background: rgba(62, 24, 30, 0.95); border-radius: 17px;` +
-        ` box-shadow: 0 3px 16px rgba(244, 113, 116, 0.35);`,
+/* Pill presets. "glass" is the aiacctool droplet: flat top, rounded
+ * bottom, faint white edge (the glow border) and a deep drop shadow.
+ * "flat" is a quiet, fully-rounded pill without the border. */
+const PILL_STYLES = {
+    glass: {
+        base: 'background: rgba(13, 15, 19, 0.90);' +
+            'border-radius: 0px 0px 22px 22px;' +
+            'border: 1px solid rgba(255, 255, 255, 0.10);' +
+            'border-top-width: 0px;' +
+            'box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);',
+        hover: 'background: rgba(23, 26, 33, 0.96);' +
+            'border-radius: 0px 0px 22px 22px;' +
+            'border: 1px solid rgba(255, 255, 255, 0.18);' +
+            'border-top-width: 0px;' +
+            'box-shadow: 0 12px 30px rgba(0, 0, 0, 0.60);',
+        alert: 'background: rgba(20, 17, 12, 0.92);' +
+            'border-radius: 0px 0px 22px 22px;' +
+            'border: 1px solid rgba(253, 214, 99, 0.32);' +
+            'border-top-width: 0px;' +
+            'box-shadow: 0 0 24px rgba(253, 214, 99, 0.40);',
+    },
+    flat: {
+        base: 'background: rgba(15, 17, 23, 0.92); border-radius: 17px;' +
+            'box-shadow: 0 3px 14px rgba(0, 0, 0, 0.5);',
+        hover: 'background: rgba(25, 28, 38, 0.97); border-radius: 17px;' +
+            'box-shadow: 0 6px 22px rgba(0, 0, 0, 0.6);',
+        alert: 'background: rgba(62, 24, 30, 0.95); border-radius: 17px;' +
+            'box-shadow: 0 3px 16px rgba(244, 113, 116, 0.35);',
+    },
 };
 
 const T = {
@@ -62,6 +84,8 @@ const DEFAULT_CONFIG = {
         eyes: true,
     },
     clock_24h: true,
+    pill_mode: 'ai',            // 'ai' = GLM chips like aiacctool, 'clock' = clock-first
+    appearance: { preset: 'glass' },
     focus: { work_min: 25, break_min: 5 },
     water_goal_ml: 2000,
     water: { date: '', ml: 0 },
@@ -199,7 +223,7 @@ class NotchBar extends PanelMenu.Button {
         super._init(0.5, 'Notch');
         this._app = app;
 
-        this.set_style(NOTCH_STYLE.base);
+        this.set_style(PILL_STYLES.glass.base);
         this._hovered = false;
         this._expanded = false;
         this._hoverTimer = 0;
@@ -421,8 +445,10 @@ class NotchBar extends PanelMenu.Button {
     }
 
     _applyPillStyle() {
-        this.set_style(this._alert ? NOTCH_STYLE.alert
-            : (this._hovered ? NOTCH_STYLE.hover : NOTCH_STYLE.base));
+        const preset = PILL_STYLES[(this._app.cfg.appearance || {}).preset] ||
+            PILL_STYLES.glass;
+        this.set_style(this._alert ? preset.alert
+            : (this._hovered ? preset.hover : preset.base));
     }
 
     /* ---------- rendering ---------- */
@@ -466,8 +492,6 @@ class NotchBar extends PanelMenu.Button {
         this._cdLabels = [];
         this._eyes = [];
 
-        /* status glyph: alert dot > idle eyes > nothing */
-        this._alert = false;
         const aiAccounts = (st.ai && st.ai.summary && st.ai.summary.panel_accounts) || [];
         const worst = aiAccounts.reduce((m, a) => Math.max(m, a.used_pct || 0), 0);
         const batteryLow = st.battery && !st.battery.charging && st.battery.pct <= 20;
@@ -475,32 +499,98 @@ class NotchBar extends PanelMenu.Button {
         const focusRunning = st.focus.phase !== 'idle';
         const mediaPlaying = !!st.media && st.media.status === 'Playing';
 
-        if ((mods.ai && aiAccounts.length && worst >= app.cfg.ai.exhaust_pct) || batteryLow) {
-            this._alert = true;
-            this._collapsedBox.add_child(new St.Widget({
-                style: `width: 8px; height: 8px; border-radius: 4px;` +
-                    `background-color: ${T.err}; box-shadow: 0 0 8px ${T.err}; margin-left: 2px;`,
-                y_align: Clutter.ActorAlign.CENTER,
-            }));
-        } else if (mods.eyes && !mediaPlaying && !focusRunning) {
-            this._collapsedBox.add_child(this._makeEyes());
-        } else {
-            const playing = mediaPlaying ? T.ok : T.muted;
-            this._collapsedBox.add_child(new St.Widget({
-                style: `width: 8px; height: 8px; border-radius: 4px;` +
-                    `background-color: ${playing}; box-shadow: 0 0 8px ${playing}; margin-left: 2px;`,
-                y_align: Clutter.ActorAlign.CENTER,
-            }));
-        }
+        const aiWarn = mods.ai && aiAccounts.length > 0 &&
+            ((st.ai.summary && st.ai.summary.has_warning) ||
+                worst >= app.cfg.ai.warn_pct);
+        this._alert = aiWarn || batteryLow;
         this._applyPillStyle();
 
-        /* chips */
+        // "ai" pill mode reproduces the aiacctool notch: status dot, one
+        // chip per GLM account (pct + bar + reset countdown), extras tail,
+        // then the clock. Falls back to clock mode when there is no data.
+        const aiMode = app.cfg.pill_mode !== 'clock' &&
+            mods.ai && aiAccounts.length > 0;
+
+        if (aiMode) {
+            const th = app.cfg.ai;
+            const dotColor = worst >= th.exhaust_pct ? T.err
+                : (aiWarn ? T.warn : T.ok);
+            this._collapsedBox.add_child(new St.Widget({
+                style: `width: 8px; height: 8px; border-radius: 4px;` +
+                    `background-color: ${dotColor}; box-shadow: 0 0 8px ${dotColor}; margin-left: 2px;`,
+                y_align: Clutter.ActorAlign.CENTER,
+            }));
+
+            const data = st.ai;
+            const bGlm = ((data.theme || {}).badge_icons &&
+                data.theme.badge_icons.glm) || '✦';
+            aiAccounts.forEach((a, i) => {
+                const pct = Math.round(a.used_pct);
+                const exhausted = a.used_pct >= th.exhaust_pct;
+                const labelColor = exhausted ? T.err
+                    : ACCOUNT_COLORS[i % ACCOUNT_COLORS.length];
+                const tag = a.short ? `${a.short} ` : '';
+                const chip = new St.BoxLayout({
+                    y_align: Clutter.ActorAlign.CENTER,
+                    style: 'spacing: 5px;',
+                });
+                chip.add_child(new St.Label({
+                    text: `${bGlm}${tag}${pct}%`,
+                    y_align: Clutter.ActorAlign.CENTER,
+                    style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${labelColor};`,
+                }));
+                chip.add_child(this._miniBar(pct,
+                    exhausted ? T.err : _usedColor(pct), 40));
+                if (a.reset_ms) {
+                    const cd = new St.Label({
+                        text: app.fmtCountdown(a.reset_ms - Date.now(), true),
+                        y_align: Clutter.ActorAlign.CENTER,
+                        style: `${FONT}font-size: 10.5px; color: ${T.muted};`,
+                    });
+                    this._cdLabels.push({ label: cd, until: a.reset_ms });
+                    chip.add_child(cd);
+                }
+                this._collapsedBox.add_child(chip);
+            });
+
+            // extras tail from the group template ({glmN} tokens stripped)
+            const gt = data.summary && data.summary.panel_group &&
+                data.summary.panel_group.text;
+            const extras = gt ? gt.replace(/\{\w+\}/g, '')
+                .split('·').map(p => p.trim()).filter(p => p.length).join(' · ') : '';
+            if (extras)
+                this._collapsedBox.add_child(new St.Label({
+                    text: extras,
+                    y_align: Clutter.ActorAlign.CENTER,
+                    style: `${FONT}font-size: 11px; color: ${((data.theme || {}).topbar_color) || '#cfd3da'};`,
+                }));
+        } else {
+            /* clock-first pill: eyes when calm, else a status dot */
+            if (this._alert) {
+                this._collapsedBox.add_child(new St.Widget({
+                    style: `width: 8px; height: 8px; border-radius: 4px;` +
+                        `background-color: ${T.err}; box-shadow: 0 0 8px ${T.err}; margin-left: 2px;`,
+                    y_align: Clutter.ActorAlign.CENTER,
+                }));
+            } else if (mods.eyes && !mediaPlaying && !focusRunning) {
+                this._collapsedBox.add_child(this._makeEyes());
+            } else {
+                const playing = mediaPlaying ? T.ok : T.muted;
+                this._collapsedBox.add_child(new St.Widget({
+                    style: `width: 8px; height: 8px; border-radius: 4px;` +
+                        `background-color: ${playing}; box-shadow: 0 0 8px ${playing}; margin-left: 2px;`,
+                    y_align: Clutter.ActorAlign.CENTER,
+                }));
+            }
+        }
+
+        /* transient chips shared by both modes */
         const chips = new St.BoxLayout({
             style: 'spacing: 8px;',
             y_align: Clutter.ActorAlign.CENTER,
         });
 
-        if (mods.media && mediaPlaying)
+        if (!aiMode && mods.media && mediaPlaying)
             chips.add_child(new St.Label({
                 text: '▶',
                 y_align: Clutter.ActorAlign.CENTER,
@@ -520,7 +610,7 @@ class NotchBar extends PanelMenu.Button {
             this._focusPillLbl = null;
         }
 
-        if (mods.ai && aiAccounts.length) {
+        if (!aiMode && mods.ai && aiAccounts.length) {
             chips.add_child(new St.Label({
                 text: `✦ ${Math.round(worst)}%`,
                 y_align: Clutter.ActorAlign.CENTER,
@@ -528,7 +618,7 @@ class NotchBar extends PanelMenu.Button {
             }));
         }
 
-        if (mods.battery && st.battery && (batteryCharging || batteryLow)) {
+        if (!aiMode && mods.battery && st.battery && (batteryCharging || batteryLow)) {
             chips.add_child(new St.Label({
                 text: `${batteryCharging ? '⚡' : '🔋'} ${st.battery.pct}%`,
                 y_align: Clutter.ActorAlign.CENTER,
@@ -536,7 +626,8 @@ class NotchBar extends PanelMenu.Button {
             }));
         }
 
-        this._collapsedBox.add_child(chips);
+        if (chips.get_children().length > 0)
+            this._collapsedBox.add_child(chips);
 
         /* clock */
         this._clockLbl = new St.Label({
@@ -918,6 +1009,28 @@ class NotchBar extends PanelMenu.Button {
         });
         this.menu.addMenuItem(modsSub);
 
+        const styleSub = new PopupMenu.PopupSubMenuMenuItem('🎨  Pill style');
+        const cur = (app.cfg.appearance || {}).preset || 'glass';
+        [['glass', 'Glass droplet (glow border)'], ['flat', 'Flat pill']]
+            .forEach(([key, label]) => {
+                const item = new PopupMenu.PopupMenuItem(
+                    (cur === key ? '●  ' : '○  ') + label);
+                item.connect('activate', () => {
+                    app.cfg.appearance = { preset: key };
+                    app.cfgVersion++;
+                    saveConfig(app.cfg);
+                    this._applyPillStyle();
+                    this._buildMenu();
+                });
+                styleSub.menu.addMenuItem(item);
+            });
+        this.menu.addMenuItem(styleSub);
+
+        const pillSw = new PopupMenu.PopupSwitchMenuItem('✦  AI chips in pill',
+            app.cfg.pill_mode !== 'clock');
+        pillSw.connect('toggled', (_, val) => app.setPillMode(val ? 'ai' : 'clock'));
+        this.menu.addMenuItem(pillSw);
+
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
         const cfgItem = new PopupMenu.PopupMenuItem('📝  Edit config.json');
@@ -1099,6 +1212,13 @@ class NotchApp {
         saveConfig(this.cfg);
         if (key === 'media')
             this._mediaChanged();
+        this._notch && this._notch.render();
+    }
+
+    setPillMode(mode) {
+        this.cfg.pill_mode = mode;
+        this.cfgVersion++;
+        saveConfig(this.cfg);
         this._notch && this._notch.render();
     }
 

@@ -30,9 +30,11 @@ $EXT disable ai-usage-monitor@ther12k 2>/dev/null || true
 echo "reloading extension..."
 $EXT disable "$UUID" 2>/dev/null || true
 sleep 1
-$EXT enable "$UUID"
+$EXT enable "$UUID" 2>/dev/null \
+    || echo "  not registered yet: GNOME Shell scans new UUIDs at login."
+echo "  -> log out once, then re-run ./deploy.sh to activate $UUID."
 sleep 3
-$EXT info "$UUID" | head -3
+$EXT info "$UUID" 2>/dev/null | head -3 || true
 
 echo "--- last journal lines (build tag + errors):"
 journalctl -b --no-pager --since "-1 min" 2>/dev/null \
