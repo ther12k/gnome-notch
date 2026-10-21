@@ -136,6 +136,14 @@ function _nowLocal() {
     return GLib.DateTime.new_now_local();
 }
 
+// Wall-clock time of a reset moment: "18:04" today, "Tue 03:00" on later days.
+function _resetClockText(ms) {
+    if (!ms)
+        return '';
+    const dt = GLib.DateTime.new_from_unix_local(Math.floor(ms / 1000));
+    return ms - Date.now() >= 86400000 ? dt.format('%a %H:%M') : dt.format('%H:%M');
+}
+
 function _usedColor(pct) {
     if (pct === null || pct === undefined) return T.muted;
     if (pct >= 95) return T.err;
@@ -505,9 +513,8 @@ class NotchBar extends PanelMenu.Button {
         this._alert = aiWarn || batteryLow;
         this._applyPillStyle();
 
-        // "ai" pill mode reproduces the aiacctool notch: status dot, one
-        // chip per GLM account (pct + bar + reset countdown), extras tail,
-        // then the clock. Falls back to clock mode when there is no data.
+        // Keep the resting pill to one account summary and the clock; detailed
+        // per-account quotas and reset times belong in the hover island.
         const aiMode = app.cfg.pill_mode !== 'clock' &&
             mods.ai && aiAccounts.length > 0;
 
@@ -516,54 +523,42 @@ class NotchBar extends PanelMenu.Button {
             const dotColor = worst >= th.exhaust_pct ? T.err
                 : (aiWarn ? T.warn : T.ok);
             this._collapsedBox.add_child(new St.Widget({
-                style: `width: 8px; height: 8px; border-radius: 4px;` +
-                    `background-color: ${dotColor}; box-shadow: 0 0 8px ${dotColor}; margin-left: 2px;`,
+                style: `width: 7px; height: 7px; border-radius: 4px;` +
+                    `background-color: ${dotColor}; box-shadow: 0 0 7px ${dotColor}; margin-left: 2px;`,
                 y_align: Clutter.ActorAlign.CENTER,
             }));
 
-            const data = st.ai;
-            const bGlm = ((data.theme || {}).badge_icons &&
-                data.theme.badge_icons.glm) || '✦';
-            aiAccounts.forEach((a, i) => {
-                const pct = Math.round(a.used_pct);
-                const exhausted = a.used_pct >= th.exhaust_pct;
-                const labelColor = exhausted ? T.err
-                    : ACCOUNT_COLORS[i % ACCOUNT_COLORS.length];
-                const tag = a.short ? `${a.short} ` : '';
-                const chip = new St.BoxLayout({
-                    y_align: Clutter.ActorAlign.CENTER,
-                    style: 'spacing: 5px;',
-                });
-                chip.add_child(new St.Label({
-                    text: `${bGlm}${tag}${pct}%`,
-                    y_align: Clutter.ActorAlign.CENTER,
-                    style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${labelColor};`,
-                }));
-                chip.add_child(this._miniBar(pct,
-                    exhausted ? T.err : _usedColor(pct), 40));
-                if (a.reset_ms) {
-                    const cd = new St.Label({
-                        text: app.fmtCountdown(a.reset_ms - Date.now(), true),
-                        y_align: Clutter.ActorAlign.CENTER,
-                        style: `${FONT}font-size: 10.5px; color: ${T.muted};`,
-                    });
-                    this._cdLabels.push({ label: cd, until: a.reset_ms });
-                    chip.add_child(cd);
-                }
-                this._collapsedBox.add_child(chip);
+            const pct = Math.round(worst);
+            const worstAccount = aiAccounts.reduce((current, account) =>
+                !current || (account.used_pct || 0) > (current.used_pct || 0)
+                    ? account : current, null);
+            const chip = new St.BoxLayout({
+                y_align: Clutter.ActorAlign.CENTER,
+                style: 'spacing: 7px;',
             });
-
-            // extras tail from the group template ({glmN} tokens stripped)
-            const gt = data.summary && data.summary.panel_group &&
-                data.summary.panel_group.text;
-            const extras = gt ? gt.replace(/\{\w+\}/g, '')
-                .split('·').map(p => p.trim()).filter(p => p.length).join(' · ') : '';
-            if (extras)
-                this._collapsedBox.add_child(new St.Label({
-                    text: extras,
+            chip.add_child(new St.Label({
+                text: `✦ ${pct}%`,
+                y_align: Clutter.ActorAlign.CENTER,
+                style: `${FONT}font-size: 12px; font-weight: 700; color: ${_usedColor(pct)};`,
+            }));
+            chip.add_child(this._miniBar(pct, _usedColor(pct), 36));
+            if (worstAccount && worstAccount.reset_ms) {
+                const until = worstAccount.reset_ms;
+                const countdown = new St.Label({
+                    text: `↻ ${app.fmtCountdown(until - Date.now())} @ ${_resetClockText(until)}`,
                     y_align: Clutter.ActorAlign.CENTER,
-                    style: `${FONT}font-size: 11px; color: ${((data.theme || {}).topbar_color) || '#cfd3da'};`,
+                    style: `${FONT}font-size: 12px; font-weight: 700; color: ${T.text};`,
+                });
+                this._cdLabels.push({ label: countdown, until, clock: true });
+                chip.add_child(countdown);
+            }
+            if (aiAccounts.length > 1)
+                chip.add_child(new St.Label({
+                    text: `×${aiAccounts.length}`,
+                    y_align: Clutter.ActorAlign.CENTER,
+                    style: `${FONT}font-size: 10px; color: ${T.muted};`,
                 }));
+            this._collapsedBox.add_child(chip);
         } else {
             /* clock-first pill: eyes when calm, else a status dot */
             if (this._alert) {
@@ -661,8 +656,7 @@ class NotchBar extends PanelMenu.Button {
         return box;
     }
 
-    /* Compact hover island: slim read-only rows; small inline buttons only
-     * where a tap is natural. Everything else lives in the click menu. */
+    /* Compact hover island: a read-only glance; actions live in the click menu. */
     _renderIsland() {
         const app = this._app;
         const st = app.state;
@@ -686,12 +680,8 @@ class NotchBar extends PanelMenu.Button {
                 style: 'spacing: 8px;',
                 y_align: Clutter.ActorAlign.CENTER,
             });
-            row.add_child(this._ctlBtn('⏮', player.canGoPrevious,
-                () => player.previous()));
-            row.add_child(this._ctlBtn(playing ? '⏸' : '▶', true, () => player.playPause()));
-            row.add_child(this._ctlBtn('⏭', player.canGoNext, () => player.next()));
             row.add_child(new St.Label({
-                text: artist ? `${title} — ${artist}` : title,
+                text: `${playing ? '▶' : '⏸'}  ${artist ? `${title} — ${artist}` : title}`,
                 y_align: Clutter.ActorAlign.CENTER,
                 style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${T.text};`,
             }));
@@ -723,7 +713,6 @@ class NotchBar extends PanelMenu.Button {
                 ? Math.max(0, Math.min(100, 100 * (1 - (f.endsAt - Date.now()) / f.totalMs)))
                 : 0;
             row.add_child(this._miniBar(frac, work ? T.accent : T.ok, 96));
-            row.add_child(this._ctlBtn('⏹', true, () => app.focusStop()));
             this._expandedBox.add_child(row);
         } else {
             this._focusRowLbl = null;
@@ -736,7 +725,8 @@ class NotchBar extends PanelMenu.Button {
             const accounts = (glm.accounts && glm.accounts.length > 0)
                 ? glm.accounts
                 : (glm.enabled ? [{ name: 'main', status: glm.status, token_quota: glm.token_quota }] : []);
-            accounts.forEach((acc, i) => {
+            const visibleAccounts = accounts.slice(0, 3);
+            visibleAccounts.forEach((acc, i) => {
                 if (acc.status === 'ok') {
                     const tok = acc.token_quota || {};
                     const short = acc.name ? String(acc.name).slice(0, 7) : 'glm';
@@ -749,6 +739,11 @@ class NotchBar extends PanelMenu.Button {
                     }));
                 }
             });
+            if (accounts.length > visibleAccounts.length)
+                this._expandedBox.add_child(new St.Label({
+                    text: `+${accounts.length - visibleAccounts.length} more accounts`,
+                    style: `${FONT}font-size: 10.5px; color: ${T.muted};`,
+                }));
             const codex = data.codex || {};
             if (codex.enabled && codex.status === 'ok')
                 this._aiRow('🤖5h', T.accent,
@@ -806,23 +801,8 @@ class NotchBar extends PanelMenu.Button {
             }));
             row.add_child(new St.Widget({ x_expand: true }));
             row.add_child(this._miniBar(pct, T.accent, 64));
-            row.add_child(this._ctlBtn('+', true, () => app.waterAdd(250)));
             this._expandedBox.add_child(row);
         }
-    }
-
-    _ctlBtn(glyph, enabled, onActivate) {
-        const btn = new St.Button({
-            label: glyph,
-            style: `${FONT}width: 22px; height: 20px; border-radius: 6px;` +
-                `background-color: rgba(255, 255, 255, 0.08);` +
-                `font-size: 11px; font-weight: 700; color: ${T.text};` +
-                (enabled ? '' : ' opacity: 0.35;'),
-            reactive: !!enabled,
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        btn.connect('clicked', onActivate);
-        return btn;
     }
 
     _aiRow(tag, tagColor, pct, resetMs) {
@@ -847,11 +827,11 @@ class NotchBar extends PanelMenu.Button {
         }));
         if (resetMs) {
             const cd = new St.Label({
-                text: this._app.fmtCountdown(resetMs - Date.now(), true),
-                style: `${FONT}font-size: 10.5px; color: ${T.muted}; min-width: 38px;`,
+                text: `↻ ${this._app.fmtCountdown(resetMs - Date.now(), true)} @ ${_resetClockText(resetMs)}`,
+                style: `${FONT}font-size: 11px; font-weight: 700; color: ${T.text};`,
                 y_align: Clutter.ActorAlign.CENTER,
             });
-            this._cdLabels.push({ label: cd, until: resetMs });
+            this._cdLabels.push({ label: cd, until: resetMs, clock: true });
             row.add_child(cd);
         }
         this._expandedBox.add_child(row);
@@ -931,7 +911,10 @@ class NotchBar extends PanelMenu.Button {
         if (this._focusRowLbl)
             this._focusRowLbl.text = this._app.focusClockText();
         this._cdLabels.forEach(e => {
-            e.label.text = this._app.fmtCountdown(e.until - Date.now(), true);
+            const remaining = this._app.fmtCountdown(e.until - Date.now(), true);
+            e.label.text = e.clock
+                ? `↻ ${remaining} @ ${_resetClockText(e.until)}`
+                : remaining;
         });
     }
 
@@ -1033,13 +1016,25 @@ class NotchBar extends PanelMenu.Button {
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
-        const cfgItem = new PopupMenu.PopupMenuItem('📝  Edit config.json');
+        const cfgItem = new PopupMenu.PopupMenuItem('📝  Open settings file');
         cfgItem.connect('activate', () => {
-            const edit = `gnome-text-editor "${CONFIG_PATH}" || gedit "${CONFIG_PATH}" ` +
-                `|| xdg-open "${CONFIG_PATH}"`;
-            Util_spawn(edit);
+            try {
+                const file = Gio.File.new_for_path(CONFIG_PATH);
+                const editor = Gio.AppInfo.get_default_for_type('application/json', false) ||
+                    Gio.AppInfo.get_default_for_type('text/plain', false);
+                if (editor)
+                    editor.launch([file], null);
+                else
+                    Gio.AppInfo.launch_default_for_uri(file.get_uri(), null);
+            } catch (e) {
+                log(`[Notch] config open failed: ${e}`);
+            }
         });
         this.menu.addMenuItem(cfgItem);
+
+        const reloadItem = new PopupMenu.PopupMenuItem('↻  Reload settings');
+        reloadItem.connect('activate', () => app.reloadConfig());
+        this.menu.addMenuItem(reloadItem);
 
         const aboutItem = new PopupMenu.PopupMenuItem('ⓘ  About Notch');
         aboutItem.connect('activate', () =>
@@ -1095,8 +1090,7 @@ class NotchApp {
         this._pollAI();
         this._fastTimer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1,
             () => this._tick());
-        this._slowTimer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 30,
-            () => this._slowPoll());
+        this._scheduleSlowPoll();
         log('[Notch] enabled');
     }
 
@@ -1127,6 +1121,16 @@ class NotchApp {
             return;
         this.state.media = this.cfg.modules.media ? this._watcher.active : null;
         this._notch.render();
+    }
+
+    _scheduleSlowPoll() {
+        if (this._slowTimer) {
+            GLib.source_remove(this._slowTimer);
+            this._slowTimer = 0;
+        }
+        const seconds = Math.max(10, Number(this.cfg.ai.poll_sec) || 30);
+        this._slowTimer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, seconds,
+            () => this._slowPoll());
     }
 
     _slowPoll() {
@@ -1212,7 +1216,30 @@ class NotchApp {
         saveConfig(this.cfg);
         if (key === 'media')
             this._mediaChanged();
+        if (key === 'ai' && val)
+            this._pollAI();
         this._notch && this._notch.render();
+    }
+
+    reloadConfig() {
+        const previous = this.cfg;
+        this.cfg = loadConfig();
+        const today = _nowLocal().format('%Y-%m-%d');
+        if (this.cfg.water.date !== today)
+            this.cfg.water = { date: today, ml: 0 };
+        this.state.water = this.cfg.water;
+        this.cfgVersion++;
+        if (this.cfg.modules.media !== previous.modules.media)
+            this._mediaChanged();
+        if (this.cfg.modules.ai)
+            this._pollAI();
+        if (this.cfg.modules.ai !== previous.modules.ai ||
+            this.cfg.ai.poll_sec !== previous.ai.poll_sec)
+            this._scheduleSlowPoll();
+        saveConfig(this.cfg);
+        this._notch && this._notch.render();
+        if (typeof Main.notify === 'function')
+            Main.notify('Notch settings reloaded');
     }
 
     setPillMode(mode) {
