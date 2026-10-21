@@ -413,6 +413,19 @@ footer a:hover{color:var(--text)}
                     <div class="irow big"><span>🔋 87%</span><span class="bar" style="width:120px"><i style="width:87%;background:var(--ok)"></i></span></div>
                     <div class="irow big"><span>💧 1250 / 2000 ml</span><span class="bar" style="width:120px"><i style="width:62%;background:var(--accent)"></i></span></div>
                   </div>
+                  <div class="pg" data-kind="config" hidden>
+                    <div class="date">Quick settings</div>
+                    <div class="cfgmods" id="cfgMods">
+                      <button class="pickbtn on" style="--hue:63,214,143" data-mod>🎵</button>
+                      <button class="pickbtn on" style="--hue:181,154,255" data-mod>🎯</button>
+                      <button class="pickbtn on" style="--hue:63,214,143" data-mod>🔋</button>
+                      <button class="pickbtn on" style="--hue:245,180,85" data-mod>✦</button>
+                      <button class="pickbtn on" style="--hue:111,217,232" data-mod>🏠</button>
+                      <button class="pickbtn" style="--hue:122,184,255" data-mod>💧</button>
+                      <button class="pickbtn on" style="--hue:232,234,237" data-mod>👁</button>
+                    </div>
+                    <div class="sub" style="margin-top:2px">tap a chip to toggle its module</div>
+                  </div>
                   <div class="pick" id="pgPick"></div>
                 </div>
                 <button class="pgbtn" id="pgNext" aria-label="Next activity">▶</button>
@@ -620,6 +633,7 @@ footer a:hover{color:var(--text)}
     ghome: ['🏠', '111,217,232'],
     battery: ['🔋', '63,214,143'],
     water: ['💧', '122,184,255'],
+    config: ['⚙', '255,158,203'],
   };
   pgs.forEach(function (p, i) {
     var meta = KIND_META[p.getAttribute('data-kind')] || ['•', '232,234,237'];
@@ -642,6 +656,11 @@ footer a:hover{color:var(--text)}
   document.getElementById('pgPrev').addEventListener('click', function () { showPg(pgIdx - 1); });
   document.getElementById('pgNext').addEventListener('click', function () { showPg(pgIdx + 1); });
   showPg(0);
+
+  // config page: module chips toggle
+  document.querySelectorAll('#cfgMods [data-mod]').forEach(function (b) {
+    b.addEventListener('click', function () { b.classList.toggle('on'); });
+  });
 
   // touch devices: tap toggles the island
   var notch = document.getElementById('notch');

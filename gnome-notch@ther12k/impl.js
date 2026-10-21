@@ -18,7 +18,6 @@ import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
-import * as ModalDialog from 'resource:///org/gnome/shell/ui/modalDialog.js';
 import { MprisPlayer } from 'resource:///org/gnome/shell/ui/mpris.js';
 
 /* ---------- constants ---------- */
@@ -117,6 +116,7 @@ const PAGE_HUES = {
     ghome: '#6fd9e8',
     battery: '#3fd68f',
     water: '#7ab8ff',
+    config: '#ff9ecb',
 };
 
 const CONFIG_DIR = GLib.build_filenamev([GLib.get_home_dir(), '.config', 'gnome-notch']);
@@ -338,7 +338,6 @@ class NotchBar extends PanelMenu.Button {
         this._islandCd = [];        // island-page countdown labels
         this._islandPage = 0;       // which island activity page is shown
         this._islandKind = null;    // its kind ('overview', 'media', …)
-        this._configDialog = null;  // settings popup modal (lazy)
         this._eyes = [];            // eye actors (blink loop pokes them)
         this._blinkTimer = 0;
         this._glanceTimer = 0;
@@ -414,11 +413,6 @@ class NotchBar extends PanelMenu.Button {
         }
         if (Main.panel.menuManager)
             Main.panel.menuManager.removeMenu(this.menu);
-        if (this._configDialog) {
-            try { this._configDialog.close(); } catch (e) { /* not open */ }
-            this._configDialog.destroy();
-            this._configDialog = null;
-        }
         try {
             Main.layoutManager.removeChrome(this);
         } catch (e) { /* already gone */ }
@@ -641,7 +635,7 @@ class NotchBar extends PanelMenu.Button {
             (mode === 'focus' && (!mods.focus || !focusRunning)) ||
             (mode === 'battery' && (!mods.battery || !st.battery)) ||
             (mode === 'ghome' && (!mods.ghome || !st.ghome)) ||
-            (mode === 'water' && !mods.water) ||
+            (mode === 'water' && !mods.water) || mode === 'config' ||
             (mode === 'ai' && !(mods.ai && aiAccounts.length)))
             mode = 'overview';
 
@@ -903,44 +897,14 @@ class NotchBar extends PanelMenu.Button {
             x_align: Clutter.ActorAlign.CENTER,
         });
         pages.forEach((p, i) => {
-            const active = i === this._islandPage;
-            const hue = PAGE_HUES[p.kind] || T.accent;
-            const styleFor = (state) => {
-                const head = `${FONT}width: 31px; height: 31px; border-radius: 10px;` +
-                    `font-size: 14.5px; font-weight: 700;`;
-                if (state === 'active')
-                    return head +
-                        `background-color: ${_hexA(hue, 0.20)};` +
-                        `border: 1px solid ${_hexA(hue, 0.60)};` +
-                        `box-shadow: 0 0 10px ${_hexA(hue, 0.35)};` +
-                        `color: ${hue};`;
-                if (state === 'hover')
-                    return head +
-                        'background-color: rgba(255, 255, 255, 0.13);' +
-                        'border: 1px solid rgba(255, 255, 255, 0.12);' +
-                        `color: ${T.text};`;
-                return head +
-                    'background-color: rgba(255, 255, 255, 0.05);' +
-                    'border: 1px solid rgba(255, 255, 255, 0.04);' +
-                    'color: rgba(232, 234, 237, 0.60);';
-            };
-            const btn = new St.Button({
-                label: p.icon,
-                style: styleFor(active ? 'active' : 'idle'),
-                y_align: Clutter.ActorAlign.CENTER,
-            });
-            if (!active) {
-                btn.connect('enter-event', () => btn.set_style(styleFor('hover')));
-                btn.connect('leave-event', () => btn.set_style(styleFor('idle')));
-            }
-            btn.connect('clicked', () => this._gotoIslandPage(i));
-            pick.add_child(btn);
+            pick.add_child(this._glowBtn(p.icon,
+                PAGE_HUES[p.kind] || T.accent, i === this._islandPage,
+                () => this._gotoIslandPage(i)));
         });
         pageBox.add_child(pick);
 
         row.add_child(pageBox);
         row.add_child(this._pageBtn('▶', () => this._turnIslandPage(1)));
-        row.add_child(this._pageBtn('⚙', () => this.openConfig()));
         this._expandedBox.add_child(row);
     }
 
@@ -1172,6 +1136,57 @@ class NotchBar extends PanelMenu.Button {
             });
         }
 
+        // quick settings: same layout as the other pages — module toggles
+        // as glowing chips, pill style and width as small choice buttons
+        pages.push({
+            kind: 'config',
+            icon: '⚙',
+            build: () => {
+                const box = new St.BoxLayout({ vertical: true, style: 'spacing: 7px;' });
+                box.add_child(lbl('⚙  quick settings',
+                    'font-size: 10.5px; font-weight: 700; color: ' +
+                    `${T.muted}; letter-spacing: 0.1em;`));
+
+                const modsRow = new St.BoxLayout({ style: 'spacing: 6px;' });
+                [
+                    ['media', '🎵'], ['focus', '🎯'], ['battery', '🔋'],
+                    ['ai', '✦'], ['ghome', '🏠'], ['water', '💧'], ['eyes', '👁'],
+                ].forEach(([key, icon]) => {
+                    modsRow.add_child(this._glowBtn(icon,
+                        PAGE_HUES[key] || '#e8eaed', !!mods[key],
+                        () => app.setModule(key, !mods[key])));
+                });
+                box.add_child(modsRow);
+
+                const styleRow = new St.BoxLayout({ style: 'spacing: 6px;' });
+                [['glass', 'Glass'], ['flat', 'Flat'], ['outline', 'Outline'],
+                    ['mist', 'Mist']].forEach(([key, name]) => {
+                    styleRow.add_child(this._textChoiceBtn(name,
+                        ((app.cfg.appearance || {}).preset || 'glass') === key,
+                        () => {
+                            app.cfg.appearance = app.cfg.appearance || {};
+                            app.cfg.appearance.preset = key;
+                            this._applyCfg();
+                        }));
+                });
+                box.add_child(styleRow);
+
+                const widthRow = new St.BoxLayout({ style: 'spacing: 6px;' });
+                [['Compact', 200], ['Regular', 260], ['Wide', 340]]
+                    .forEach(([name, px]) => {
+                        widthRow.add_child(this._textChoiceBtn(name,
+                            ((app.cfg.appearance || {}).min_width || 260) === px,
+                            () => {
+                                app.cfg.appearance = app.cfg.appearance || {};
+                                app.cfg.appearance.min_width = px;
+                                this._applyCfg();
+                            }));
+                    });
+                box.add_child(widthRow);
+                return box;
+            },
+        });
+
         return pages;
     }
 
@@ -1208,11 +1223,60 @@ class NotchBar extends PanelMenu.Button {
         this._showIslandPage(idx, idx > this._islandPage ? 1 : -1);
     }
 
-    openConfig() {
-        if (!this._configDialog)
-            this._configDialog = new ConfigDialog(this._app);
-        this._configDialog._build();   // refresh current state
-        this._configDialog.open(global.get_current_time());
+    // apply an appearance change made from the config page and re-render
+    _applyCfg() {
+        this._app.cfgVersion++;
+        saveConfig(this._app.cfg);
+        this.render();
+    }
+
+    // small glowing icon toggle (used by the page chooser and config page)
+    _glowBtn(glyph, hue, active, onActivate) {
+        const styleFor = state =>
+            `${FONT}width: 31px; height: 31px; border-radius: 10px;` +
+            `font-size: 14.5px; font-weight: 700;` +
+            (state === 'active'
+                ? `background-color: ${_hexA(hue, 0.20)};` +
+                    `border: 1px solid ${_hexA(hue, 0.60)};` +
+                    `box-shadow: 0 0 10px ${_hexA(hue, 0.35)};` +
+                    `color: ${hue};`
+                : state === 'hover'
+                    ? 'background-color: rgba(255, 255, 255, 0.13);' +
+                        'border: 1px solid rgba(255, 255, 255, 0.12);' +
+                        `color: ${T.text};`
+                    : 'background-color: rgba(255, 255, 255, 0.05);' +
+                        'border: 1px solid rgba(255, 255, 255, 0.04);' +
+                        'color: rgba(232, 234, 237, 0.55);');
+        const btn = new St.Button({
+            label: glyph,
+            style: styleFor(active ? 'active' : 'idle'),
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        if (!active) {
+            btn.connect('enter-event', () => btn.set_style(styleFor('hover')));
+            btn.connect('leave-event', () => btn.set_style(styleFor('idle')));
+        }
+        btn.connect('clicked', onActivate);
+        return btn;
+    }
+
+    // small text choice button (config page rows)
+    _textChoiceBtn(label, active, onActivate) {
+        const btn = new St.Button({
+            label,
+            style: active
+                ? 'height: 27px; border-radius: 9px; padding-left: 12px; padding-right: 12px;' +
+                    'background-color: rgba(122,184,255,0.20);' +
+                    'border: 1px solid rgba(122,184,255,0.60);' +
+                    'box-shadow: 0 0 10px rgba(122,184,255,0.30);' +
+                    'font-size: 11.5px; font-weight: 700; color: #7ab8ff;'
+                : 'height: 27px; border-radius: 9px; padding-left: 12px; padding-right: 12px;' +
+                    'background-color: rgba(255,255,255,0.06);' +
+                    'border: 1px solid rgba(255,255,255,0.08);' +
+                    'font-size: 11.5px; font-weight: 600; color: rgba(232,234,237,0.7);',
+        });
+        btn.connect('clicked', onActivate);
+        return btn;
     }
 
     // Re-ease the expanded island to the current page's size.
@@ -1493,10 +1557,6 @@ class NotchBar extends PanelMenu.Button {
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
-        const cfgDlgItem = new PopupMenu.PopupMenuItem('⚙  Settings…');
-        cfgDlgItem.connect('activate', () => this.openConfig());
-        this.menu.addMenuItem(cfgDlgItem);
-
         const cfgItem = new PopupMenu.PopupMenuItem('📝  Open settings file');
         cfgItem.connect('activate', () => app.openConfigFile());
         this.menu.addMenuItem(cfgItem);
@@ -1509,140 +1569,6 @@ class NotchBar extends PanelMenu.Button {
         aboutItem.connect('activate', () =>
             Util_spawn('xdg-open https://github.com/ther12k/gnome-notch'));
         this.menu.addMenuItem(aboutItem);
-    }
-});
-
-/* ---------- settings popup modal ---------- */
-
-const ConfigDialog = GObject.registerClass(
-{ GTypeName: `NotchConfigDialog_${_IMPL_STAMP}` },
-class ConfigDialog extends ModalDialog.ModalDialog {
-    _init(app) {
-        super._init({ destroyOnClose: false });
-        this._app = app;
-        this._build();
-    }
-
-    _build() {
-        const app = this._app;
-        const cfg = app.cfg;
-        const content = this.dialogLayout.contentLayout;
-        content.destroy_all_children();
-        content.set_style(`${FONT}spacing: 9px; min-width: 430px;`);
-
-        const heading = text => content.add_child(new St.Label({
-            text,
-            style: 'font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em;' +
-                'color: rgba(232, 234, 237, 0.45); margin-top: 4px;',
-        }));
-
-        content.add_child(new St.Label({
-            text: '⚙  Notch settings',
-            style: 'font-size: 15px; font-weight: 800; color: #e8eaed;',
-        }));
-
-        heading('MODULES');
-        [
-            ['media', '🎵  Media'], ['focus', '🎯  Focus timer'],
-            ['battery', '🔋  Battery'], ['ai', '✦  AI quota'],
-            ['ghome', '🏠  Google Home'], ['water', '💧  Hydration'],
-            ['eyes', '👀  Idle eyes'],
-        ].forEach(([key, label]) => {
-            content.add_child(this._toggleRow(label, !!cfg.modules[key],
-                want => {
-                    app.setModule(key, want);
-                    this._build();
-                }));
-        });
-
-        heading('PILL STYLE');
-        const stylesBox = new St.BoxLayout({ style: 'spacing: 6px;' });
-        [['glass', 'Glass'], ['flat', 'Flat'], ['outline', 'Outline'], ['mist', 'Mist']]
-            .forEach(([key, label]) => {
-                const active = ((cfg.appearance || {}).preset || 'glass') === key;
-                stylesBox.add_child(this._choiceBtn(label, active, () => {
-                    cfg.appearance = cfg.appearance || {};
-                    cfg.appearance.preset = key;
-                    this._apply();
-                }));
-            });
-        content.add_child(stylesBox);
-
-        heading('PILL WIDTH');
-        const widthBox = new St.BoxLayout({ style: 'spacing: 6px;' });
-        [['Compact', 200], ['Regular', 260], ['Wide', 340]]
-            .forEach(([label, px]) => {
-                const active = ((cfg.appearance || {}).min_width || 260) === px;
-                widthBox.add_child(this._choiceBtn(label, active, () => {
-                    cfg.appearance = cfg.appearance || {};
-                    cfg.appearance.min_width = px;
-                    this._apply();
-                }));
-            });
-        content.add_child(widthBox);
-
-        const actions = new St.BoxLayout({ style: 'spacing: 8px; margin-top: 12px;' });
-        actions.add_child(this._choiceBtn('📝  Config file', false,
-            () => app.openConfigFile()));
-        actions.add_child(this._choiceBtn('↻  Reload', false, () => {
-            app.reloadConfig();
-            this._build();
-        }));
-        actions.add_child(this._choiceBtn('Done', true, () => this.close()));
-        content.add_child(actions);
-    }
-
-    _apply() {
-        this._app.cfgVersion++;
-        saveConfig(this._app.cfg);
-        this._app._notch && this._app._notch.render();
-        this._build();
-    }
-
-    _toggleRow(label, on, cb) {
-        const row = new St.BoxLayout({
-            style: 'spacing: 10px;',
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        row.add_child(new St.Label({
-            text: label,
-            x_expand: true,
-            style: 'font-size: 12.5px; font-weight: 600; color: #e8eaed;',
-        }));
-        const btn = new St.Button({
-            label: on ? '●  on' : '○  off',
-            style: on
-                ? 'width: 64px; height: 26px; border-radius: 999px;' +
-                    'background-color: rgba(63,214,143,0.18);' +
-                    'border: 1px solid rgba(63,214,143,0.55);' +
-                    'box-shadow: 0 0 8px rgba(63,214,143,0.25);' +
-                    'font-size: 11px; font-weight: 700; color: #3fd68f;'
-                : 'width: 64px; height: 26px; border-radius: 999px;' +
-                    'background-color: rgba(255,255,255,0.05);' +
-                    'border: 1px solid rgba(255,255,255,0.10);' +
-                    'font-size: 11px; font-weight: 700; color: rgba(232,234,237,0.5);',
-        });
-        btn.connect('clicked', () => cb(!on));
-        row.add_child(btn);
-        return row;
-    }
-
-    _choiceBtn(label, active, cb) {
-        const btn = new St.Button({
-            label,
-            style: active
-                ? 'height: 30px; border-radius: 10px; padding-left: 14px; padding-right: 14px;' +
-                    'background-color: rgba(122,184,255,0.20);' +
-                    'border: 1px solid rgba(122,184,255,0.60);' +
-                    'box-shadow: 0 0 10px rgba(122,184,255,0.30);' +
-                    'font-size: 12px; font-weight: 700; color: #7ab8ff;'
-                : 'height: 30px; border-radius: 10px; padding-left: 14px; padding-right: 14px;' +
-                    'background-color: rgba(255,255,255,0.06);' +
-                    'border: 1px solid rgba(255,255,255,0.08);' +
-                    'font-size: 12px; font-weight: 600; color: rgba(232,234,237,0.75);',
-        });
-        btn.connect('clicked', cb);
-        return btn;
     }
 });
 
