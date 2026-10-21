@@ -1,0 +1,1194 @@
+// Notch — a living notch for GNOME Shell 46.
+//
+// A macOS-style droplet pill hangs from the top-center of the screen:
+//   resting   → clock + status chips (+ cute eyes when everything is calm)
+//   hover     → compact read-only island (media, focus, battery, AI, water)
+//   click     → full menu with module toggles and actions
+// It steps aside when the primary monitor goes fullscreen.
+//
+// Layout reference: Nusa (https://rama2555.github.io/nusa/) — a living
+// notch for Windows. AI-quota module spun off from aiacctool
+// (github.com/ther12k — private) which ships ai-collector.py.
+
+import Clutter from 'gi://Clutter';
+import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
+import GObject from 'gi://GObject';
+import St from 'gi://St';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
+import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
+import { MprisPlayer } from 'resource:///org/gnome/shell/ui/mpris.js';
+
+/* ---------- constants ---------- */
+
+const ISLAND_MAX_W = 380;
+const PAD_X = 14;
+const PAD_TOP = 9;
+const PAD_BOTTOM = 11;
+
+const FONT = 'font-family: "Inter","Cantarell","Ubuntu Sans",sans-serif;';
+
+const NOTCH_STYLE = {
+    base: `background: rgba(15, 17, 23, 0.92); border-radius: 17px;` +
+        ` box-shadow: 0 3px 14px rgba(0, 0, 0, 0.5);`,
+    hover: `background: rgba(25, 28, 38, 0.97); border-radius: 17px;` +
+        ` box-shadow: 0 6px 22px rgba(0, 0, 0, 0.6);`,
+    alert: `background: rgba(62, 24, 30, 0.95); border-radius: 17px;` +
+        ` box-shadow: 0 3px 16px rgba(244, 113, 116, 0.35);`,
+};
+
+const T = {
+    ok: '#3fd68f',
+    warn: '#f5b455',
+    err: '#f47174',
+    accent: '#7ab8ff',
+    text: '#e8eaed',
+    muted: 'rgba(232, 234, 237, 0.55)',
+};
+
+const ACCOUNT_COLORS = ['#7ab8ff', '#b59aff', '#3fd68f', '#f5b455', '#ff9ecb', '#6fd9e8'];
+
+const CONFIG_DIR = GLib.build_filenamev([GLib.get_home_dir(), '.config', 'gnome-notch']);
+const CONFIG_PATH = GLib.build_filenamev([CONFIG_DIR, 'config.json']);
+
+const DEFAULT_CONFIG = {
+    modules: {
+        media: true,
+        focus: true,
+        battery: true,
+        ai: true,
+        water: false,
+        eyes: true,
+    },
+    clock_24h: true,
+    focus: { work_min: 25, break_min: 5 },
+    water_goal_ml: 2000,
+    water: { date: '', ml: 0 },
+    ai: { poll_sec: 30, warn_pct: 85, exhaust_pct: 95 },
+};
+
+/* ---------- config ---------- */
+
+function _merge(base, over) {
+    if (Array.isArray(base) || typeof base !== 'object' || base === null)
+        return over === undefined ? base : over;
+    const out = {};
+    for (const k of Object.keys(base)) out[k] = _merge(base[k], over ? over[k] : undefined);
+    for (const k of Object.keys(over || {})) if (!(k in out)) out[k] = over[k];
+    return out;
+}
+
+function loadConfig() {
+    try {
+        const [ok, raw] = GLib.file_get_contents(CONFIG_PATH);
+        if (ok)
+            return _merge(DEFAULT_CONFIG, JSON.parse(new TextDecoder().decode(raw)));
+    } catch (e) {
+        log(`[Notch] config load failed, using defaults: ${e}`);
+    }
+    const cfg = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+    saveConfig(cfg);   // materialize defaults so "Edit config" has a file
+    return cfg;
+}
+
+function saveConfig(cfg) {
+    try {
+        GLib.mkdir_with_parents(CONFIG_DIR, 0o755);
+        GLib.file_set_contents(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+    } catch (e) {
+        log(`[Notch] config save failed: ${e}`);
+    }
+}
+
+/* ---------- helpers ---------- */
+
+function _trunc(s, n) {
+    s = String(s || '');
+    return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}
+
+function _nowLocal() {
+    return GLib.DateTime.new_now_local();
+}
+
+function _usedColor(pct) {
+    if (pct === null || pct === undefined) return T.muted;
+    if (pct >= 95) return T.err;
+    if (pct >= 80) return T.warn;
+    return T.ok;
+}
+
+/* ---------- MPRIS media watcher ---------- */
+
+const MPRIS_PREFIX = 'org.mpris.MediaPlayer2.';
+const DBUS_IFACE_XML =
+    '<node><interface name="org.freedesktop.DBus">' +
+    '<method name="ListNames"><arg type="as" direction="out"/></method>' +
+    '<signal name="NameOwnerChanged"><arg type="s"/><arg type="s"/><arg type="s"/></signal>' +
+    '</interface></node>';
+const DBusProxy = Gio.DBusProxy.makeProxyWrapper(DBUS_IFACE_XML);
+
+class MediaWatcher {
+    constructor(onChange) {
+        this._players = new Map();
+        this._onChange = onChange;
+        this._proxy = new DBusProxy(Gio.DBus.session, 'org.freedesktop.DBus',
+            '/org/freedesktop/DBus', (p, err) => {
+                if (err) {
+                    log(`[Notch] DBus proxy failed: ${err}`);
+                    return;
+                }
+                this._ready();
+            });
+    }
+
+    async _ready() {
+        try {
+            const [names] = await this._proxy.ListNamesAsync();
+            names.forEach(n => {
+                if (n.startsWith(MPRIS_PREFIX))
+                    this._add(n);
+            });
+        } catch (e) {
+            log(`[Notch] ListNames failed: ${e}`);
+        }
+        this._proxy.connectSignal('NameOwnerChanged', (_, __, [name, oldO, newO]) => {
+            if (!name.startsWith(MPRIS_PREFIX))
+                return;
+            if (newO && !oldO)
+                this._add(name);
+        });
+        this._onChange();
+    }
+
+    _add(busName) {
+        if (this._players.has(busName))
+            return;
+        const player = new MprisPlayer(busName);
+        player.connect('changed', () => this._onChange());
+        player.connect('closed', () => {
+            this._players.delete(busName);
+            this._onChange();
+        });
+        this._players.set(busName, player);
+    }
+
+    // Prefer whichever player is actively playing, else the first one.
+    get active() {
+        let first = null;
+        for (const p of this._players.values()) {
+            if (p.status === 'Playing')
+                return p;
+            if (!first)
+                first = p;
+        }
+        return first;
+    }
+
+    destroy() {
+        this._players.clear();
+    }
+}
+
+/* ---------- the notch bar ---------- */
+
+const NotchBar = GObject.registerClass(
+class NotchBar extends PanelMenu.Button {
+    _init(app) {
+        super._init(0.5, 'Notch');
+        this._app = app;
+
+        this.set_style(NOTCH_STYLE.base);
+        this._hovered = false;
+        this._expanded = false;
+        this._hoverTimer = 0;
+        this._alert = false;
+        this._collapsedH = 30;
+        this._lastSig = null;
+
+        this._clockLbl = null;
+        this._cdLabels = [];        // live countdown labels [{label, ms}]
+        this._eyes = [];            // eye actors (blink loop pokes them)
+        this._blinkTimer = 0;
+        this._glanceTimer = 0;
+
+        // Surface: fixed-layout container; children positioned manually
+        this._surface = new St.Widget();
+        this.add_child(this._surface);
+
+        this._collapsedBox = new St.BoxLayout({
+            style: 'spacing: 9px;',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._surface.add_child(this._collapsedBox);
+
+        this._expandedBox = new St.BoxLayout({
+            vertical: true,
+            style: 'spacing: 4px;',
+        });
+        this._expandedBox.hide();
+        this._surface.add_child(this._expandedBox);
+
+        this.connect('enter-event', () => {
+            this._hovered = true;
+            this._applyPillStyle();
+            this._scheduleExpand();
+        });
+        this.connect('leave-event', () => {
+            this._hovered = false;
+            this._applyPillStyle();
+            this._scheduleCollapse();
+        });
+        this.menu.connect('open-state-changed', (_, open) => {
+            if (open)
+                this._buildMenu();
+            else if (!this.hover)
+                this._scheduleCollapse();
+        });
+        this.connect('notify::width', () => this._recenter());
+        this.connect('destroy', () => {
+            this._cancelHoverTimers();
+            this._cancelEyeTimers();
+        });
+
+        this._scheduleBlink();
+        this._scheduleGlance();
+    }
+
+    attach() {
+        // PanelMenu.Button (ButtonBox) wraps itself in a container St.Bin;
+        // clutter add_child refuses parented actors, so release the bin's
+        // child first or addChrome silently fails and nothing shows.
+        if (this.container && this.get_parent() === this.container)
+            this.container.child = null;
+        Main.layoutManager.addChrome(this, { affectsInputRegion: true });
+        if (Main.panel.menuManager)
+            Main.panel.menuManager.addMenu(this.menu);
+        this._monChangedId = Main.layoutManager.connect('monitors-changed', () => this._syncMetrics());
+        this._fsId = global.display.connect('in-fullscreen-changed', () => this._updateFullscreen());
+        this._syncMetrics();
+        this._updateFullscreen();
+    }
+
+    detach() {
+        this._cancelHoverTimers();
+        this._cancelEyeTimers();
+        if (this._monChangedId) {
+            Main.layoutManager.disconnect(this._monChangedId);
+            this._monChangedId = 0;
+        }
+        if (this._fsId) {
+            global.display.disconnect(this._fsId);
+            this._fsId = 0;
+        }
+        if (Main.panel.menuManager)
+            Main.panel.menuManager.removeMenu(this.menu);
+        try {
+            Main.layoutManager.removeChrome(this);
+        } catch (e) { /* already gone */ }
+        this.destroy();
+    }
+
+    vfunc_event(event) {
+        // PanelMenu.Button toggles the menu on BUTTON_PRESS; sprout the
+        // island first so the menu anchors to the expanded size.
+        if (event.type() === Clutter.EventType.BUTTON_PRESS)
+            this._expand();
+        return super.vfunc_event(event);
+    }
+
+    /* ---------- fullscreen ---------- */
+
+    _updateFullscreen() {
+        const m = Main.layoutManager.primaryMonitor;
+        const fs = m ? global.display.get_monitor_in_fullscreen(m.index) : false;
+        this.visible = !fs;
+    }
+
+    /* ---------- geometry ---------- */
+
+    _syncMetrics() {
+        this._collapsedH = Math.max(26, Main.panel ? Main.panel.height : 30);
+        if (!this._expanded)
+            this._applyRestingSize();
+        this._recenter();
+    }
+
+    _applyRestingSize() {
+        const [, natW] = this._collapsedBox.get_preferred_width(-1);
+        const [, natH] = this._collapsedBox.get_preferred_height(natW);
+        this.set_size(Math.max(120, natW + 2 * PAD_X), this._collapsedH);
+        this._collapsedBox.set_position(PAD_X,
+            Math.max(0, Math.round((this._collapsedH - natH) / 2)));
+    }
+
+    _recenter() {
+        const m = Main.layoutManager.primaryMonitor;
+        if (!m)
+            return;
+        this.set_position(Math.round(m.x + (m.width - this.width) / 2), 0);
+    }
+
+    /* ---------- expand / collapse ---------- */
+
+    _cancelHoverTimers() {
+        if (this._hoverTimer) {
+            GLib.source_remove(this._hoverTimer);
+            this._hoverTimer = 0;
+        }
+    }
+
+    _scheduleExpand() {
+        this._cancelHoverTimers();
+        if (this._expanded)
+            return;
+        this._hoverTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 110, () => {
+            this._hoverTimer = 0;
+            this._expand();
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _scheduleCollapse() {
+        this._cancelHoverTimers();
+        if (!this._expanded || this.menu.isOpen)
+            return;
+        this._hoverTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 340, () => {
+            this._hoverTimer = 0;
+            this._collapse();
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _expand() {
+        if (this._expanded)
+            return;
+        this._cancelHoverTimers();
+        this._expanded = true;
+        this._expandedBox.set_position(PAD_X, PAD_TOP);
+        this._expandedBox.show();
+        this._expandedBox.opacity = 0;
+        this._collapsedBox.ease({
+            opacity: 0, duration: 110, mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+        });
+        this._expandedBox.ease({
+            opacity: 255, duration: 280, delay: 110,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+        });
+        // Compact island: never wider than the cap (or the pill itself),
+        // content-sized height — slim rows, not a dashboard.
+        this._expandedBox.set_width(-1);
+        const [, natW] = this._expandedBox.get_preferred_width(-1);
+        const targetW = Math.max(this.width,
+            Math.min(natW + 2 * PAD_X, ISLAND_MAX_W));
+        const innerW = targetW - 2 * PAD_X;
+        this._expandedBox.set_width(innerW);
+        const [, natH] = this._expandedBox.get_preferred_height(innerW);
+        this.ease({
+            width: targetW,
+            height: natH + PAD_TOP + PAD_BOTTOM,
+            duration: 300,
+            mode: Clutter.AnimationMode.EASE_OUT_BACK,
+        });
+    }
+
+    _collapse() {
+        if (!this._expanded || this.menu.isOpen)
+            return;
+        this._cancelHoverTimers();
+        this._expanded = false;
+        this._expandedBox.ease({
+            opacity: 0, duration: 130, mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+        });
+        const [, natW] = this._collapsedBox.get_preferred_width(-1);
+        const [, natH] = this._collapsedBox.get_preferred_height(natW);
+        this.ease({
+            width: Math.max(120, natW + 2 * PAD_X),
+            height: this._collapsedH,
+            duration: 260,
+            mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
+            onStopped: () => {
+                if (this._expanded)
+                    return;   // re-hovered mid-collapse; new ease owns state
+                // Deterministic reset so no stale layer can linger.
+                this._expandedBox.hide();
+                this._expandedBox.set_width(-1);
+                this._collapsedBox.opacity = 255;
+                this._applyRestingSize();
+            },
+        });
+    }
+
+    _applyPillStyle() {
+        this.set_style(this._alert ? NOTCH_STYLE.alert
+            : (this._hovered ? NOTCH_STYLE.hover : NOTCH_STYLE.base));
+    }
+
+    /* ---------- rendering ---------- */
+
+    // Rebuild both layers only when something meaningful changed; the clock
+    // and countdowns tick in place so the eyes animation is never disturbed.
+    render() {
+        const sig = this._stateSig();
+        if (sig === this._lastSig)
+            return;
+        this._lastSig = sig;
+        this._renderCollapsed();
+        this._renderIsland();
+        if (!this._expanded)
+            this._applyRestingSize();
+    }
+
+    _stateSig() {
+        const st = this._app.state;
+        const p = st.media;
+        const f = st.focus;
+        const media = p ? [p.trackTitle, p.trackArtists, p.status] : null;
+        const focus = [f.phase, f.phase !== 'idle' ? Math.ceil(f.endsAt / 30000) : 0];
+        const ai = st.ai && st.ai.summary ? st.ai.summary.panel_accounts
+            .map(a => `${a.short}:${Math.round(a.used_pct)}:${a.reset_ms}`) : null;
+        const bat = st.battery ? [st.battery.pct, st.battery.charging] : null;
+        return JSON.stringify([this._app.cfgVersion, media, focus, ai, bat,
+            st.water ? [st.water.date, st.water.ml] : null, this._dayStr()]);
+    }
+
+    _dayStr() {
+        return _nowLocal().format('%Y-%m-%d');
+    }
+
+    _renderCollapsed() {
+        const app = this._app;
+        const st = app.state;
+        const mods = app.cfg.modules;
+
+        this._collapsedBox.destroy_all_children();
+        this._cdLabels = [];
+        this._eyes = [];
+
+        /* status glyph: alert dot > idle eyes > nothing */
+        this._alert = false;
+        const aiAccounts = (st.ai && st.ai.summary && st.ai.summary.panel_accounts) || [];
+        const worst = aiAccounts.reduce((m, a) => Math.max(m, a.used_pct || 0), 0);
+        const batteryLow = st.battery && !st.battery.charging && st.battery.pct <= 20;
+        const batteryCharging = st.battery && st.battery.charging;
+        const focusRunning = st.focus.phase !== 'idle';
+        const mediaPlaying = !!st.media && st.media.status === 'Playing';
+
+        if ((mods.ai && aiAccounts.length && worst >= app.cfg.ai.exhaust_pct) || batteryLow) {
+            this._alert = true;
+            this._collapsedBox.add_child(new St.Widget({
+                style: `width: 8px; height: 8px; border-radius: 4px;` +
+                    `background-color: ${T.err}; box-shadow: 0 0 8px ${T.err}; margin-left: 2px;`,
+                y_align: Clutter.ActorAlign.CENTER,
+            }));
+        } else if (mods.eyes && !mediaPlaying && !focusRunning) {
+            this._collapsedBox.add_child(this._makeEyes());
+        } else {
+            const playing = mediaPlaying ? T.ok : T.muted;
+            this._collapsedBox.add_child(new St.Widget({
+                style: `width: 8px; height: 8px; border-radius: 4px;` +
+                    `background-color: ${playing}; box-shadow: 0 0 8px ${playing}; margin-left: 2px;`,
+                y_align: Clutter.ActorAlign.CENTER,
+            }));
+        }
+        this._applyPillStyle();
+
+        /* chips */
+        const chips = new St.BoxLayout({
+            style: 'spacing: 8px;',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+
+        if (mods.media && mediaPlaying)
+            chips.add_child(new St.Label({
+                text: '▶',
+                y_align: Clutter.ActorAlign.CENTER,
+                style: `${FONT}font-size: 11px; color: ${T.ok};`,
+            }));
+
+        if (mods.focus && focusRunning) {
+            const work = st.focus.phase === 'work';
+            const lbl = new St.Label({
+                text: app.focusClockText(),
+                y_align: Clutter.ActorAlign.CENTER,
+                style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${work ? T.accent : T.ok};`,
+            });
+            this._focusPillLbl = lbl;
+            chips.add_child(lbl);
+        } else {
+            this._focusPillLbl = null;
+        }
+
+        if (mods.ai && aiAccounts.length) {
+            chips.add_child(new St.Label({
+                text: `✦ ${Math.round(worst)}%`,
+                y_align: Clutter.ActorAlign.CENTER,
+                style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${_usedColor(worst)};`,
+            }));
+        }
+
+        if (mods.battery && st.battery && (batteryCharging || batteryLow)) {
+            chips.add_child(new St.Label({
+                text: `${batteryCharging ? '⚡' : '🔋'} ${st.battery.pct}%`,
+                y_align: Clutter.ActorAlign.CENTER,
+                style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${batteryLow ? T.warn : T.ok};`,
+            }));
+        }
+
+        this._collapsedBox.add_child(chips);
+
+        /* clock */
+        this._clockLbl = new St.Label({
+            text: app.clockText(),
+            y_align: Clutter.ActorAlign.CENTER,
+            style: `${FONT}font-size: 12.5px; font-weight: 700; color: ${T.text}; margin-right: 2px;`,
+        });
+        this._collapsedBox.add_child(this._clockLbl);
+    }
+
+    _makeEyes() {
+        const box = new St.BoxLayout({
+            style: 'spacing: 5px; margin-left: 2px;',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        for (let i = 0; i < 2; i++) {
+            const eye = new St.Widget({
+                style: `width: 13px; height: 9px; border-radius: 5px;` +
+                    `background-color: rgba(232, 234, 237, 0.9);`,
+            });
+            const pupil = new St.Widget({
+                style: 'width: 4px; height: 4px; border-radius: 2px;' +
+                    'background-color: #14161c;',
+            });
+            pupil.set_position(4, 2);
+            eye.add_child(pupil);
+            eye._pupil = pupil;
+            this._eyes.push(eye);
+            box.add_child(eye);
+        }
+        return box;
+    }
+
+    /* Compact hover island: slim read-only rows; small inline buttons only
+     * where a tap is natural. Everything else lives in the click menu. */
+    _renderIsland() {
+        const app = this._app;
+        const st = app.state;
+        const mods = app.cfg.modules;
+
+        this._expandedBox.destroy_all_children();
+
+        /* date line */
+        this._expandedBox.add_child(new St.Label({
+            text: _nowLocal().format('%A, %B %e'),
+            style: `${FONT}font-size: 10.5px; font-weight: 700; color: ${T.muted};`,
+        }));
+
+        /* media row */
+        const player = mods.media ? st.media : null;
+        if (player) {
+            const playing = player.status === 'Playing';
+            const title = _trunc(player.trackTitle || 'Untitled', 30);
+            const artist = _trunc((player.trackArtists || []).join(', '), 18);
+            const row = new St.BoxLayout({
+                style: 'spacing: 8px;',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            row.add_child(this._ctlBtn('⏮', player.canGoPrevious,
+                () => player.previous()));
+            row.add_child(this._ctlBtn(playing ? '⏸' : '▶', true, () => player.playPause()));
+            row.add_child(this._ctlBtn('⏭', player.canGoNext, () => player.next()));
+            row.add_child(new St.Label({
+                text: artist ? `${title} — ${artist}` : title,
+                y_align: Clutter.ActorAlign.CENTER,
+                style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${T.text};`,
+            }));
+            this._expandedBox.add_child(row);
+        }
+
+        /* focus row */
+        if (mods.focus && st.focus.phase !== 'idle') {
+            const f = st.focus;
+            const work = f.phase === 'work';
+            const row = new St.BoxLayout({
+                style: 'spacing: 8px;',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            const lbl = new St.Label({
+                text: app.focusClockText(),
+                style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${work ? T.accent : T.ok};`,
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            this._focusRowLbl = lbl;
+            row.add_child(new St.Label({
+                text: work ? '🎯' : '☕',
+                style: 'font-size: 11.5px;',
+                y_align: Clutter.ActorAlign.CENTER,
+            }));
+            row.add_child(lbl);
+            row.add_child(new St.Widget({ x_expand: true }));
+            const frac = f.totalMs > 0
+                ? Math.max(0, Math.min(100, 100 * (1 - (f.endsAt - Date.now()) / f.totalMs)))
+                : 0;
+            row.add_child(this._miniBar(frac, work ? T.accent : T.ok, 96));
+            row.add_child(this._ctlBtn('⏹', true, () => app.focusStop()));
+            this._expandedBox.add_child(row);
+        } else {
+            this._focusRowLbl = null;
+        }
+
+        /* AI quota rows */
+        if (mods.ai && st.ai) {
+            const data = st.ai;
+            const glm = data.glm || {};
+            const accounts = (glm.accounts && glm.accounts.length > 0)
+                ? glm.accounts
+                : (glm.enabled ? [{ name: 'main', status: glm.status, token_quota: glm.token_quota }] : []);
+            accounts.forEach((acc, i) => {
+                if (acc.status === 'ok') {
+                    const tok = acc.token_quota || {};
+                    const short = acc.name ? String(acc.name).slice(0, 7) : 'glm';
+                    this._aiRow(`✦${short}`, ACCOUNT_COLORS[i % ACCOUNT_COLORS.length],
+                        tok.used_pct, tok.reset_ms);
+                } else {
+                    this._expandedBox.add_child(new St.Label({
+                        text: `✦${String(acc.name || 'glm').slice(0, 7)} offline`,
+                        style: `${FONT}font-size: 11px; color: ${T.err};`,
+                    }));
+                }
+            });
+            const codex = data.codex || {};
+            if (codex.enabled && codex.status === 'ok')
+                this._aiRow('🤖5h', T.accent,
+                    (codex.primary_window || {}).used_pct,
+                    (codex.primary_window || {}).reset_ms);
+
+            const s = data.summary || {};
+            const bits = [];
+            if (s.panel_group && s.panel_group.text)
+                bits.push(s.panel_group.text.replace(/\{\w+\}/g, '').trim());
+            const r9 = data.nine_router || {};
+            if (r9.enabled && (r9.remote_running || r9.local_running)) {
+                const up = Object.values(r9.filtered_providers || {})
+                    .reduce((a, p) => a + (p.active_count || 0), 0);
+                bits.push(`9R ${up}↑`);
+            }
+            if (bits.length)
+                this._expandedBox.add_child(new St.Label({
+                    text: bits.join('  ·  '),
+                    style: `${FONT}font-size: 10.5px; color: ${T.muted};`,
+                }));
+        }
+
+        /* battery row */
+        if (mods.battery && st.battery) {
+            const b = st.battery;
+            const row = new St.BoxLayout({
+                style: 'spacing: 8px;',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            row.add_child(new St.Label({
+                text: `${b.charging ? '⚡' : '🔋'} ${b.pct}%`,
+                style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${T.text};`,
+                y_align: Clutter.ActorAlign.CENTER,
+            }));
+            row.add_child(new St.Widget({ x_expand: true }));
+            row.add_child(this._miniBar(b.pct,
+                b.charging ? T.ok : (b.pct <= 20 ? T.err : T.ok), 96));
+            this._expandedBox.add_child(row);
+        }
+
+        /* water row */
+        if (mods.water) {
+            const w = st.water || { ml: 0 };
+            const goal = app.cfg.water_goal_ml;
+            const pct = Math.min(100, Math.round(100 * w.ml / goal));
+            const row = new St.BoxLayout({
+                style: 'spacing: 8px;',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            row.add_child(new St.Label({
+                text: `💧 ${w.ml} / ${goal} ml`,
+                style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${T.text};`,
+                y_align: Clutter.ActorAlign.CENTER,
+            }));
+            row.add_child(new St.Widget({ x_expand: true }));
+            row.add_child(this._miniBar(pct, T.accent, 64));
+            row.add_child(this._ctlBtn('+', true, () => app.waterAdd(250)));
+            this._expandedBox.add_child(row);
+        }
+    }
+
+    _ctlBtn(glyph, enabled, onActivate) {
+        const btn = new St.Button({
+            label: glyph,
+            style: `${FONT}width: 22px; height: 20px; border-radius: 6px;` +
+                `background-color: rgba(255, 255, 255, 0.08);` +
+                `font-size: 11px; font-weight: 700; color: ${T.text};` +
+                (enabled ? '' : ' opacity: 0.35;'),
+            reactive: !!enabled,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        btn.connect('clicked', onActivate);
+        return btn;
+    }
+
+    _aiRow(tag, tagColor, pct, resetMs) {
+        const val = Math.max(0, Math.min(100, pct === null || pct === undefined ? 0 : pct));
+        const color = _usedColor(val);
+        const row = new St.BoxLayout({
+            style: 'spacing: 8px;',
+            y_align: Clutter.ActorAlign.CENTER,
+            x_expand: true,
+        });
+        row.add_child(new St.Label({
+            text: tag,
+            style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${tagColor}; min-width: 36px;`,
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
+        row.add_child(new St.Widget({ x_expand: true }));
+        row.add_child(this._miniBar(val, color, 64));
+        row.add_child(new St.Label({
+            text: `${Math.round(val)}%`,
+            style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${color}; min-width: 30px;`,
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
+        if (resetMs) {
+            const cd = new St.Label({
+                text: this._app.fmtCountdown(resetMs - Date.now(), true),
+                style: `${FONT}font-size: 10.5px; color: ${T.muted}; min-width: 38px;`,
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            this._cdLabels.push({ label: cd, until: resetMs });
+            row.add_child(cd);
+        }
+        this._expandedBox.add_child(row);
+    }
+
+    _miniBar(pct, color, width = 64) {
+        const val = Math.max(0, Math.min(100, pct));
+        const fillW = val > 0 ? Math.max(4, Math.round(width * val / 100)) : 0;
+        const box = new St.BoxLayout({ y_align: Clutter.ActorAlign.CENTER });
+        if (fillW > 0)
+            box.add_child(new St.BoxLayout({
+                style: `width: ${fillW}px; height: 6px; background-color: ${color}; border-radius: 3px;`,
+            }));
+        box.add_child(new St.BoxLayout({
+            style: `width: ${width - fillW}px; height: 6px;` +
+                `background-color: rgba(255, 255, 255, 0.10); border-radius: 3px;`,
+        }));
+        return box;
+    }
+
+    /* ---------- eyes animation ---------- */
+
+    _cancelEyeTimers() {
+        if (this._blinkTimer) {
+            GLib.source_remove(this._blinkTimer);
+            this._blinkTimer = 0;
+        }
+        if (this._glanceTimer) {
+            GLib.source_remove(this._glanceTimer);
+            this._glanceTimer = 0;
+        }
+    }
+
+    _scheduleBlink() {
+        this._blinkTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT,
+            2400 + Math.floor(Math.random() * 3600), () => {
+                this._blinkTimer = 0;
+                this._eyes.forEach(eye => {
+                    eye.ease({
+                        scale_y: 0.12, duration: 90,
+                        mode: Clutter.AnimationMode.EASE_IN_QUAD,
+                        onStopped: () => eye.ease({
+                            scale_y: 1, duration: 120,
+                            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                        }),
+                    });
+                });
+                this._scheduleBlink();
+                return GLib.SOURCE_REMOVE;
+            });
+    }
+
+    _scheduleGlance() {
+        this._glanceTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT,
+            3200 + Math.floor(Math.random() * 4200), () => {
+                this._glanceTimer = 0;
+                const dx = (Math.random() < 0.5 ? -1 : 1) * 2.5;
+                this._eyes.forEach(eye => {
+                    if (eye._pupil)
+                        eye._pupil.ease({
+                            translation_x: dx, duration: 260,
+                            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                        });
+                });
+                this._scheduleGlance();
+                return GLib.SOURCE_REMOVE;
+            });
+    }
+
+    /* ---------- 1s tick ---------- */
+
+    tick() {
+        if (this._clockLbl)
+            this._clockLbl.text = this._app.clockText();
+        if (this._focusPillLbl)
+            this._focusPillLbl.text = this._app.focusClockText();
+        if (this._focusRowLbl)
+            this._focusRowLbl.text = this._app.focusClockText();
+        this._cdLabels.forEach(e => {
+            e.label.text = this._app.fmtCountdown(e.until - Date.now(), true);
+        });
+    }
+
+    /* ---------- menu ---------- */
+
+    _buildMenu() {
+        this.menu.removeAll();
+        const app = this._app;
+        const st = app.state;
+        const mods = app.cfg.modules;
+
+        const player = mods.media ? st.media : null;
+        if (player) {
+            const title = _trunc(player.trackTitle || 'Untitled', 34);
+            const artist = _trunc((player.trackArtists || []).join(', '), 26);
+            const np = new PopupMenu.PopupMenuItem(
+                player.status === 'Playing' ? `▶ ${title} — ${artist}` : `⏸ ${title}`,
+                { reactive: false });
+            this.menu.addMenuItem(np);
+            const prevItem = new PopupMenu.PopupMenuItem('⏮  Previous track');
+            prevItem.connect('activate', () => player.previous());
+            this.menu.addMenuItem(prevItem);
+            const ppItem = new PopupMenu.PopupMenuItem(
+                player.status === 'Playing' ? '⏸  Pause' : '▶  Play');
+            ppItem.connect('activate', () => player.playPause());
+            this.menu.addMenuItem(ppItem);
+            const nextItem = new PopupMenu.PopupMenuItem('⏭  Next track');
+            nextItem.connect('activate', () => player.next());
+            this.menu.addMenuItem(nextItem);
+            this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+        }
+
+        if (mods.focus) {
+            const f = st.focus;
+            if (f.phase === 'idle') {
+                const workItem = new PopupMenu.PopupMenuItem(
+                    `🎯  Start focus (${app.cfg.focus.work_min}m)`);
+                workItem.connect('activate', () => app.focusStart('work'));
+                this.menu.addMenuItem(workItem);
+                const brkItem = new PopupMenu.PopupMenuItem(
+                    `☕  Start break (${app.cfg.focus.break_min}m)`);
+                brkItem.connect('activate', () => app.focusStart('break'));
+                this.menu.addMenuItem(brkItem);
+            } else {
+                const stopItem = new PopupMenu.PopupMenuItem(
+                    `⏹  Stop ${f.phase === 'work' ? 'focus' : 'break'}`);
+                stopItem.connect('activate', () => app.focusStop());
+                this.menu.addMenuItem(stopItem);
+            }
+        }
+
+        if (mods.water) {
+            const w = st.water || { ml: 0 };
+            const waterItem = new PopupMenu.PopupMenuItem(
+                `💧  +250 ml  (${w.ml}/${app.cfg.water_goal_ml})`);
+            waterItem.connect('activate', () => app.waterAdd(250));
+            this.menu.addMenuItem(waterItem);
+        }
+
+        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
+        const modsSub = new PopupMenu.PopupSubMenuMenuItem('🧩  Modules');
+        const defs = [
+            ['media', '🎵  Media'],
+            ['focus', '🎯  Focus timer'],
+            ['battery', '🔋  Battery'],
+            ['ai', '✦  AI quota'],
+            ['water', '💧  Hydration'],
+            ['eyes', '👀  Idle eyes'],
+        ];
+        defs.forEach(([key, label]) => {
+            const sw = new PopupMenu.PopupSwitchMenuItem(label, !!mods[key]);
+            sw.connect('toggled', (_, val) => app.setModule(key, val));
+            modsSub.menu.addMenuItem(sw);
+        });
+        this.menu.addMenuItem(modsSub);
+
+        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
+        const cfgItem = new PopupMenu.PopupMenuItem('📝  Edit config.json');
+        cfgItem.connect('activate', () => {
+            const edit = `gnome-text-editor "${CONFIG_PATH}" || gedit "${CONFIG_PATH}" ` +
+                `|| xdg-open "${CONFIG_PATH}"`;
+            Util_spawn(edit);
+        });
+        this.menu.addMenuItem(cfgItem);
+
+        const aboutItem = new PopupMenu.PopupMenuItem('ⓘ  About Notch');
+        aboutItem.connect('activate', () =>
+            Util_spawn('xdg-open https://github.com/ther12k/gnome-notch'));
+        this.menu.addMenuItem(aboutItem);
+    }
+});
+
+/* tiny command spawner (keeps imports minimal) */
+function Util_spawn(cmdline) {
+    try {
+        const [ok, argv] = GLib.shell_parse_argv(cmdline);
+        if (ok)
+            GLib.spawn_async(null, argv, null,
+                GLib.SpawnFlags.SEARCH_PATH, null);
+    } catch (e) {
+        log(`[Notch] spawn failed: ${e}`);
+    }
+}
+
+/* ---------- app orchestrator ---------- */
+
+class NotchApp {
+    constructor(loader) {
+        this._loader = loader;
+    }
+
+    enable() {
+        this.cfg = loadConfig();
+        this.cfgVersion = 0;
+
+        // water day rollover
+        const today = _nowLocal().format('%Y-%m-%d');
+        if ((this.cfg.water || {}).date !== today) {
+            this.cfg.water = { date: today, ml: 0 };
+            saveConfig(this.cfg);
+        }
+
+        this.state = {
+            media: null,
+            focus: { phase: 'idle', endsAt: 0, totalMs: 0 },
+            battery: null,
+            ai: null,
+            water: this.cfg.water,
+        };
+
+        this._watcher = new MediaWatcher(() => this._mediaChanged());
+        this._notch = new NotchBar(this);
+        this._notch.attach();
+        this._notch.render();
+
+        this._pollBattery();
+        this._pollAI();
+        this._fastTimer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1,
+            () => this._tick());
+        this._slowTimer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 30,
+            () => this._slowPoll());
+        log('[Notch] enabled');
+    }
+
+    disable() {
+        if (this._fastTimer) {
+            GLib.source_remove(this._fastTimer);
+            this._fastTimer = 0;
+        }
+        if (this._slowTimer) {
+            GLib.source_remove(this._slowTimer);
+            this._slowTimer = 0;
+        }
+        if (this._watcher) {
+            this._watcher.destroy();
+            this._watcher = null;
+        }
+        if (this._notch) {
+            this._notch.detach();
+            this._notch = null;
+        }
+        log('[Notch] disabled');
+    }
+
+    /* ----- data ----- */
+
+    _mediaChanged() {
+        if (!this._notch)
+            return;
+        this.state.media = this.cfg.modules.media ? this._watcher.active : null;
+        this._notch.render();
+    }
+
+    _slowPoll() {
+        this._pollBattery();
+        if (this.cfg.modules.ai)
+            this._pollAI();
+        return GLib.SOURCE_CONTINUE;
+    }
+
+    _pollBattery() {
+        try {
+            const dir = Gio.File.new_for_path('/sys/class/power_supply');
+            const names = dir.enumerate_children('standard::name',
+                Gio.FileQueryInfoFlags.NONE, null);
+            let info, bat = null;
+            while ((info = names.next_file(null))) {
+                const n = info.get_name();
+                if (n.startsWith('BAT')) {
+                    bat = n;
+                    break;
+                }
+            }
+            names.close(null);
+            if (!bat) {
+                this.state.battery = null;   // desktop without battery
+                return;
+            }
+            const base = `/sys/class/power_supply/${bat}`;
+            const pct = this._readSys(`${base}/capacity`);
+            const status = this._readSys(`${base}/status`);
+            if (pct !== null) {
+                this.state.battery = {
+                    pct: parseInt(pct, 10),
+                    charging: status === 'Charging',
+                };
+                this._notch && this._notch.render();
+            }
+        } catch (e) {
+            log(`[Notch] battery poll failed: ${e}`);
+        }
+    }
+
+    _readSys(path) {
+        try {
+            const [ok, bytes] = GLib.file_get_contents(path);
+            if (ok)
+                return new TextDecoder().decode(bytes).trim();
+        } catch (e) { /* missing file */ }
+        return null;
+    }
+
+    _pollAI() {
+        try {
+            const script = GLib.build_filenamev([this._loader.path, 'ai-collector.py']);
+            const proc = new Gio.Subprocess({
+                argv: ['python3', script],
+                flags: Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE,
+            });
+            proc.init(null);
+            proc.communicate_utf8_async(null, null, (obj, res) => {
+                try {
+                    const [ok, stdout, stderr] = proc.communicate_utf8_finish(res);
+                    if (ok && stdout) {
+                        this.state.ai = JSON.parse(stdout);
+                        this._notch && this._notch.render();
+                    } else {
+                        log(`[Notch] AI collector failed: ${stderr}`);
+                    }
+                } catch (e) {
+                    log(`[Notch] AI parse failed: ${e}`);
+                }
+            });
+        } catch (e) {
+            log(`[Notch] AI spawn failed: ${e}`);
+        }
+    }
+
+    /* ----- actions ----- */
+
+    setModule(key, val) {
+        this.cfg.modules[key] = val;
+        this.cfgVersion++;
+        saveConfig(this.cfg);
+        if (key === 'media')
+            this._mediaChanged();
+        this._notch && this._notch.render();
+    }
+
+    focusStart(phase) {
+        const mins = phase === 'work' ? this.cfg.focus.work_min : this.cfg.focus.break_min;
+        const totalMs = mins * 60 * 1000;
+        this.state.focus = { phase, endsAt: Date.now() + totalMs, totalMs };
+        this._notch && this._notch.render();
+    }
+
+    focusStop() {
+        this.state.focus = { phase: 'idle', endsAt: 0, totalMs: 0 };
+        this._notch && this._notch.render();
+    }
+
+    waterAdd(ml) {
+        const today = _nowLocal().format('%Y-%m-%d');
+        const w = this.state.water && this.state.water.date === today
+            ? this.state.water : { date: today, ml: 0 };
+        w.ml += ml;
+        this.state.water = w;
+        this.cfg.water = w;
+        saveConfig(this.cfg);
+        this._notch && this._notch.render();
+    }
+
+    /* ----- 1s tick ----- */
+
+    _tick() {
+        const f = this.state.focus;
+        if (f.phase !== 'idle' && Date.now() >= f.endsAt) {
+            const wasWork = f.phase === 'work';
+            this.focusStop();
+            if (typeof Main.notify === 'function')
+                Main.notify(wasWork ? 'Focus complete 🎉' : 'Break over ☕',
+                    wasWork ? 'Nice work — time for a break.'
+                        : 'Back to it!');
+        }
+        this._notch && this._notch.tick();
+        return GLib.SOURCE_CONTINUE;
+    }
+
+    /* ----- formatting ----- */
+
+    clockText() {
+        const fmt = this.cfg.clock_24h !== false ? '%H:%M' : '%l:%M';
+        return _nowLocal().format(fmt).trim();
+    }
+
+    focusClockText() {
+        const f = this.state.focus;
+        if (f.phase === 'idle')
+            return '';
+        const s = Math.max(0, Math.ceil((f.endsAt - Date.now()) / 1000));
+        return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+    }
+
+    fmtCountdown(ms, short) {
+        if (ms === null || ms === undefined || ms <= 0)
+            return short ? '0s' : '—';
+        const s = Math.floor(ms / 1000);
+        const d = Math.floor(s / 86400);
+        const h = Math.floor((s % 86400) / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        if (short) {
+            if (d) return `${d}d${h}h`;
+            if (h) return `${h}h${m}m`;
+            if (m) return `${m}m`;
+            return `${s % 60}s`;
+        }
+        if (d) return `${d}d ${h}h`;
+        if (h) return `${h}h ${m}m`;
+        return `${m}m ${s % 60}s`;
+    }
+}
+
+export default class NotchExtension {
+    constructor(loader) {
+        this._loader = loader;
+    }
+
+    enable() {
+        this._app = new NotchApp(this._loader);
+        this._app.enable();
+    }
+
+    disable() {
+        if (this._app) {
+            this._app.disable();
+            this._app = null;
+        }
+    }
+}

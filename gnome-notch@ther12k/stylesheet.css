@@ -1,0 +1,8 @@
+/* Visuals are applied inline (NOTCH styles below) because GNOME Shell
+ * caches stylesheets for the whole session; this file only provides a
+ * sane fallback after a fresh login. */
+
+.notch-pill {
+    background: rgba(16, 18, 24, 0.92);
+    border-radius: 17px;
+}

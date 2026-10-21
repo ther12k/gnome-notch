@@ -1,0 +1,10 @@
+{
+  "uuid": "gnome-notch@ther12k",
+  "name": "Notch",
+  "description": "A living notch for GNOME Shell: clock, media controls, focus timer, battery, hydration, idle eyes \u2014 with optional AI quota tracking. Inspired by Nusa.",
+  "url": "https://github.com/ther12k/gnome-notch",
+  "version": 1,
+  "shell-version": [
+    "46"
+  ]
+}
