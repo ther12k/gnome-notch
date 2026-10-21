@@ -277,6 +277,8 @@ class NotchBar extends PanelMenu.Button {
 
         this._clockLbl = null;
         this._cdLabels = [];        // live countdown labels [{label, ms}]
+        this._islandCd = [];        // island-page countdown labels
+        this._islandPage = 0;       // which island activity page is shown
         this._eyes = [];            // eye actors (blink loop pokes them)
         this._blinkTimer = 0;
         this._glanceTimer = 0;
@@ -696,153 +698,273 @@ class NotchBar extends PanelMenu.Button {
         return box;
     }
 
-    /* Compact hover island: a read-only glance; actions live in the click menu. */
+    /* Compact hover island, paged Nusa-style: ◀ ▶ flip between activities,
+     * dots show which page you're on. Rows stay read-only; actions live in
+     * the click menu. */
     _renderIsland() {
         const app = this._app;
         const st = app.state;
-        const mods = app.cfg.modules;
 
         this._expandedBox.destroy_all_children();
+        this._islandCd = [];
+        this._focusRowLbl = null;
 
-        /* date line */
-        this._expandedBox.add_child(new St.Label({
-            text: _nowLocal().format('%A, %B %e'),
-            style: `${FONT}font-size: 10.5px; font-weight: 700; color: ${T.muted};`,
-        }));
-
-        /* media row */
-        const player = mods.media ? st.media : null;
-        if (player) {
-            const playing = player.status === 'Playing';
-            const title = _trunc(player.trackTitle || 'Untitled', 30);
-            const artist = _trunc((player.trackArtists || []).join(', '), 18);
-            const row = new St.BoxLayout({
-                style: 'spacing: 8px;',
-                y_align: Clutter.ActorAlign.CENTER,
-            });
-            row.add_child(new St.Label({
-                text: `${playing ? '▶' : '⏸'}  ${artist ? `${title} — ${artist}` : title}`,
-                y_align: Clutter.ActorAlign.CENTER,
-                style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${T.text};`,
+        const pages = this._islandPages();
+        if (pages.length === 0) {
+            this._expandedBox.add_child(new St.Label({
+                text: 'all quiet',
+                style: `${FONT}font-size: 10.5px; color: ${T.muted};`,
             }));
-            this._expandedBox.add_child(row);
+            return;
+        }
+        if (this._islandPage >= pages.length)
+            this._islandPage = 0;
+
+        if (pages.length === 1) {
+            this._expandedBox.add_child(pages[this._islandPage].build());
+            return;
         }
 
-        /* focus row */
-        if (mods.focus && st.focus.phase !== 'idle') {
-            const f = st.focus;
-            const work = f.phase === 'work';
-            const row = new St.BoxLayout({
-                style: 'spacing: 8px;',
-                y_align: Clutter.ActorAlign.CENTER,
+        const row = new St.BoxLayout({
+            style: 'spacing: 8px;',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        row.add_child(this._pageBtn('◀', () => this._turnIslandPage(-1)));
+
+        const pageBox = new St.BoxLayout({
+            vertical: true,
+            style: 'spacing: 4px;',
+        });
+        if (this._expanded && this._expandedBox.width > 0)
+            pageBox.set_width(Math.max(120, this._expandedBox.width - 76));
+        pageBox.add_child(pages[this._islandPage].build());
+
+        const dots = new St.BoxLayout({
+            style: 'spacing: 4px;',
+            x_align: Clutter.ActorAlign.CENTER,
+        });
+        pages.forEach((_, i) => dots.add_child(new St.Widget({
+            style: `width: 5px; height: 5px; border-radius: 3px;` +
+                `background-color: rgba(232, 234, 237, ${i === this._islandPage ? 0.9 : 0.22});`,
+        })));
+        pageBox.add_child(dots);
+
+        row.add_child(pageBox);
+        row.add_child(this._pageBtn('▶', () => this._turnIslandPage(1)));
+        this._expandedBox.add_child(row);
+    }
+
+    /* one page per activity; only modules with something to say */
+    _islandPages() {
+        const app = this._app;
+        const st = app.state;
+        const mods = app.cfg.modules;
+        const pages = [];
+        const lbl = (text, style) => new St.Label({ text, style: `${FONT}${style}` });
+
+        /* overview: date + one summary line per live module */
+        pages.push({
+            build: () => {
+                const box = new St.BoxLayout({ vertical: true, style: 'spacing: 4px;' });
+                box.add_child(lbl(_nowLocal().format('%A, %B %e'),
+                    `font-size: 10.5px; font-weight: 700; color: ${T.muted};`));
+                const line = (icon, text, color) => box.add_child(lbl(
+                    `${icon}  ${text}`, `font-size: 11.5px; font-weight: 700; color: ${color};`));
+                if (mods.media && st.media)
+                    line(st.media.status === 'Playing' ? '▶' : '⏸',
+                        _trunc(st.media.trackTitle || 'Untitled', 26), T.text);
+                if (mods.focus && st.focus.phase !== 'idle')
+                    line(st.focus.phase === 'work' ? '🎯' : '☕',
+                        app.focusClockText(), st.focus.phase === 'work' ? T.accent : T.ok);
+                if (mods.ai && st.ai && st.ai.summary) {
+                    const acc = st.ai.summary.panel_accounts || [];
+                    const worst = acc.reduce((m, a) => Math.max(m, a.used_pct || 0), 0);
+                    const reset = acc.length ? app.fmtCountdown(
+                        (acc.find(a => a.used_pct === worst) || {}).reset_ms - Date.now(), true) : '';
+                    if (acc.length)
+                        line('✦', `${Math.round(worst)}%${reset ? `  ↻ ${reset}` : ''}`,
+                            _usedColor(worst));
+                }
+                if (mods.battery && st.battery)
+                    line(st.battery.charging ? '⚡' : '🔋', `${st.battery.pct}%`, T.text);
+                if (mods.water)
+                    line('💧', `${(st.water || { ml: 0 }).ml} / ${app.cfg.water_goal_ml} ml`, T.text);
+                return box;
+            },
+        });
+
+        if (mods.media && st.media) {
+            const player = st.media;
+            pages.push({
+                build: () => {
+                    const box = new St.BoxLayout({ vertical: true, style: 'spacing: 4px;' });
+                    const playing = player.status === 'Playing';
+                    const title = _trunc(player.trackTitle || 'Untitled', 32);
+                    const artist = _trunc((player.trackArtists || []).join(', '), 24);
+                    box.add_child(lbl(`${playing ? '▶' : '⏸'}  ${title}`,
+                        `font-size: 12.5px; font-weight: 700; color: ${T.text};`));
+                    if (artist)
+                        box.add_child(lbl(artist,
+                            `font-size: 11px; color: ${T.muted};`));
+                    box.add_child(lbl('controls in the click menu',
+                        `font-size: 10px; color: ${T.muted};`));
+                    return box;
+                },
             });
-            const lbl = new St.Label({
-                text: app.focusClockText(),
-                style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${work ? T.accent : T.ok};`,
-                y_align: Clutter.ActorAlign.CENTER,
-            });
-            this._focusRowLbl = lbl;
-            row.add_child(new St.Label({
-                text: work ? '🎯' : '☕',
-                style: 'font-size: 11.5px;',
-                y_align: Clutter.ActorAlign.CENTER,
-            }));
-            row.add_child(lbl);
-            row.add_child(new St.Widget({ x_expand: true }));
-            const frac = f.totalMs > 0
-                ? Math.max(0, Math.min(100, 100 * (1 - (f.endsAt - Date.now()) / f.totalMs)))
-                : 0;
-            row.add_child(this._miniBar(frac, work ? T.accent : T.ok, 96));
-            this._expandedBox.add_child(row);
-        } else {
-            this._focusRowLbl = null;
         }
 
-        /* AI quota rows */
+        if (mods.focus) {
+            pages.push({
+                build: () => {
+                    const f = st.focus;
+                    const box = new St.BoxLayout({ vertical: true, style: 'spacing: 4px;' });
+                    const work = f.phase === 'work';
+                    if (f.phase !== 'idle') {
+                        const timer = lbl(
+                            `${work ? '🎯 focus' : '☕ break'}  ${app.focusClockText()}`,
+                            `font-size: 13px; font-weight: 700; color: ${work ? T.accent : T.ok};`);
+                        this._focusRowLbl = timer;
+                        box.add_child(timer);
+                        const frac = f.totalMs > 0
+                            ? Math.max(0, Math.min(100, 100 * (1 - (f.endsAt - Date.now()) / f.totalMs)))
+                            : 0;
+                        const barRow = new St.BoxLayout({ spacing: 8 });
+                        barRow.add_child(this._miniBar(frac, work ? T.accent : T.ok, 140));
+                        box.add_child(barRow);
+                    } else {
+                        box.add_child(lbl('🎯 Focus timer',
+                            `font-size: 12.5px; font-weight: 700; color: ${T.text};`));
+                        box.add_child(lbl(
+                            `work ${app.cfg.focus.work_min}m · break ${app.cfg.focus.break_min}m — start from the menu`,
+                            `font-size: 10.5px; color: ${T.muted};`));
+                    }
+                    return box;
+                },
+            });
+        }
+
         if (mods.ai && st.ai) {
             const data = st.ai;
             const glm = data.glm || {};
             const accounts = (glm.accounts && glm.accounts.length > 0)
                 ? glm.accounts
                 : (glm.enabled ? [{ name: 'main', status: glm.status, token_quota: glm.token_quota }] : []);
-            const visibleAccounts = accounts.slice(0, 3);
-            visibleAccounts.forEach((acc, i) => {
-                if (acc.status === 'ok') {
-                    const tok = acc.token_quota || {};
-                    const short = acc.name ? String(acc.name).slice(0, 7) : 'glm';
-                    this._aiRow(`✦${short}`, ACCOUNT_COLORS[i % ACCOUNT_COLORS.length],
-                        tok.used_pct, tok.reset_ms);
-                } else {
-                    this._expandedBox.add_child(new St.Label({
-                        text: `✦${String(acc.name || 'glm').slice(0, 7)} offline`,
-                        style: `${FONT}font-size: 11px; color: ${T.err};`,
-                    }));
-                }
-            });
-            if (accounts.length > visibleAccounts.length)
-                this._expandedBox.add_child(new St.Label({
-                    text: `+${accounts.length - visibleAccounts.length} more accounts`,
-                    style: `${FONT}font-size: 10.5px; color: ${T.muted};`,
-                }));
-            const codex = data.codex || {};
-            if (codex.enabled && codex.status === 'ok')
-                this._aiRow('🤖5h', T.accent,
-                    (codex.primary_window || {}).used_pct,
-                    (codex.primary_window || {}).reset_ms);
-
-            const s = data.summary || {};
-            const bits = [];
-            if (s.panel_group && s.panel_group.text)
-                bits.push(s.panel_group.text.replace(/\{\w+\}/g, '').trim());
-            const r9 = data.nine_router || {};
-            if (r9.enabled && (r9.remote_running || r9.local_running)) {
-                const up = Object.values(r9.filtered_providers || {})
-                    .reduce((a, p) => a + (p.active_count || 0), 0);
-                bits.push(`9R ${up}↑`);
+            if (accounts.length || (data.summary || {}).panel_group) {
+                pages.push({
+                    build: () => {
+                        const box = new St.BoxLayout({ vertical: true, style: 'spacing: 4px;' });
+                        const visible = accounts.slice(0, 4);
+                        visible.forEach((acc, i) => {
+                            if (acc.status === 'ok') {
+                                const tok = acc.token_quota || {};
+                                const short = acc.name ? String(acc.name).slice(0, 7) : 'glm';
+                                box.add_child(this._aiRow(`✦${short}`,
+                                    ACCOUNT_COLORS[i % ACCOUNT_COLORS.length],
+                                    tok.used_pct, tok.reset_ms));
+                            } else {
+                                box.add_child(lbl(
+                                    `✦${String(acc.name || 'glm').slice(0, 7)} offline`,
+                                    `font-size: 11px; color: ${T.err};`));
+                            }
+                        });
+                        if (accounts.length > visible.length)
+                            box.add_child(lbl(`+${accounts.length - visible.length} more accounts`,
+                                `font-size: 10.5px; color: ${T.muted};`));
+                        const codex = data.codex || {};
+                        if (codex.enabled && codex.status === 'ok')
+                            box.add_child(this._aiRow('🤖5h', T.accent,
+                                (codex.primary_window || {}).used_pct,
+                                (codex.primary_window || {}).reset_ms));
+                        const s = data.summary || {};
+                        const bits = [];
+                        if (s.panel_group && s.panel_group.text)
+                            bits.push(s.panel_group.text.replace(/\{\w+\}/g, '').trim());
+                        const r9 = data.nine_router || {};
+                        if (r9.enabled && (r9.remote_running || r9.local_running)) {
+                            const up = Object.values(r9.filtered_providers || {})
+                                .reduce((a, p) => a + (p.active_count || 0), 0);
+                            bits.push(`9R ${up}↑`);
+                        }
+                        if (bits.length)
+                            box.add_child(lbl(bits.join('  ·  '),
+                                `font-size: 10.5px; color: ${T.muted};`));
+                        return box;
+                    },
+                });
             }
-            if (bits.length)
-                this._expandedBox.add_child(new St.Label({
-                    text: bits.join('  ·  '),
-                    style: `${FONT}font-size: 10.5px; color: ${T.muted};`,
-                }));
         }
 
-        /* battery row */
         if (mods.battery && st.battery) {
-            const b = st.battery;
-            const row = new St.BoxLayout({
-                style: 'spacing: 8px;',
-                y_align: Clutter.ActorAlign.CENTER,
+            pages.push({
+                build: () => {
+                    const b = st.battery;
+                    const box = new St.BoxLayout({ vertical: true, style: 'spacing: 4px;' });
+                    box.add_child(lbl(`${b.charging ? '⚡ charging' : '🔋 battery'}  ${b.pct}%`,
+                        `font-size: 13px; font-weight: 700; color: ${T.text};`));
+                    box.add_child(this._miniBar(b.pct,
+                        b.charging ? T.ok : (b.pct <= 20 ? T.err : T.ok), 140));
+                    return box;
+                },
             });
-            row.add_child(new St.Label({
-                text: `${b.charging ? '⚡' : '🔋'} ${b.pct}%`,
-                style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${T.text};`,
-                y_align: Clutter.ActorAlign.CENTER,
-            }));
-            row.add_child(new St.Widget({ x_expand: true }));
-            row.add_child(this._miniBar(b.pct,
-                b.charging ? T.ok : (b.pct <= 20 ? T.err : T.ok), 96));
-            this._expandedBox.add_child(row);
         }
 
-        /* water row */
         if (mods.water) {
-            const w = st.water || { ml: 0 };
-            const goal = app.cfg.water_goal_ml;
-            const pct = Math.min(100, Math.round(100 * w.ml / goal));
-            const row = new St.BoxLayout({
-                style: 'spacing: 8px;',
-                y_align: Clutter.ActorAlign.CENTER,
+            pages.push({
+                build: () => {
+                    const w = st.water || { ml: 0 };
+                    const goal = app.cfg.water_goal_ml;
+                    const pct = Math.min(100, Math.round(100 * w.ml / goal));
+                    const box = new St.BoxLayout({ vertical: true, style: 'spacing: 4px;' });
+                    box.add_child(lbl(`💧  ${w.ml} / ${goal} ml`,
+                        `font-size: 13px; font-weight: 700; color: ${T.text};`));
+                    box.add_child(this._miniBar(pct, T.accent, 140));
+                    box.add_child(lbl('+250 ml from the menu',
+                        `font-size: 10px; color: ${T.muted};`));
+                    return box;
+                },
             });
-            row.add_child(new St.Label({
-                text: `💧 ${w.ml} / ${goal} ml`,
-                style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${T.text};`,
-                y_align: Clutter.ActorAlign.CENTER,
-            }));
-            row.add_child(new St.Widget({ x_expand: true }));
-            row.add_child(this._miniBar(pct, T.accent, 64));
-            this._expandedBox.add_child(row);
         }
+
+        return pages;
+    }
+
+    _turnIslandPage(dir) {
+        const pages = this._islandPages();
+        if (pages.length < 2)
+            return;
+        this._islandPage = (this._islandPage + dir + pages.length) % pages.length;
+        this._renderIsland();
+        this._relayoutIsland();
+    }
+
+    // Re-ease the expanded island to the current page's size.
+    _relayoutIsland() {
+        if (!this._expanded)
+            return;
+        const [, natW] = this._expandedBox.get_preferred_width(-1);
+        const targetW = Math.max(this.width, Math.min(natW + 2 * PAD_X, ISLAND_MAX_W));
+        const innerW = targetW - 2 * PAD_X;
+        this._expandedBox.set_width(innerW);
+        const [, natH] = this._expandedBox.get_preferred_height(innerW);
+        this.ease({
+            width: targetW,
+            height: natH + PAD_TOP + PAD_BOTTOM,
+            duration: 220,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+        });
+        this._recenter();
+    }
+
+    _pageBtn(glyph, onActivate) {
+        const btn = new St.Button({
+            label: glyph,
+            style: `${FONT}width: 24px; height: 26px; border-radius: 8px;` +
+                `background-color: rgba(255, 255, 255, 0.08);` +
+                `font-size: 11px; font-weight: 700; color: ${T.text};`,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        btn.connect('clicked', onActivate);
+        return btn;
     }
 
     _aiRow(tag, tagColor, pct, resetMs) {
@@ -871,10 +993,10 @@ class NotchBar extends PanelMenu.Button {
                 style: `${FONT}font-size: 11px; font-weight: 700; color: ${T.text};`,
                 y_align: Clutter.ActorAlign.CENTER,
             });
-            this._cdLabels.push({ label: cd, until: resetMs, clock: true });
+            this._islandCd.push({ label: cd, until: resetMs, clock: true });
             row.add_child(cd);
         }
-        this._expandedBox.add_child(row);
+        return row;
     }
 
     _miniBar(pct, color, width = 64) {
@@ -950,12 +1072,14 @@ class NotchBar extends PanelMenu.Button {
             this._focusPillLbl.text = this._app.focusClockText();
         if (this._focusRowLbl)
             this._focusRowLbl.text = this._app.focusClockText();
-        this._cdLabels.forEach(e => {
+        const tickCd = e => {
             const remaining = this._app.fmtCountdown(e.until - Date.now(), true);
             e.label.text = e.clock
                 ? `↻ ${remaining} @ ${_resetClockText(e.until)}`
                 : remaining;
-        });
+        };
+        this._cdLabels.forEach(tickCd);
+        (this._islandCd || []).forEach(tickCd);
     }
 
     /* ---------- menu ---------- */

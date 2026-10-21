@@ -24,7 +24,9 @@ Windows. The AI-quota module spun out of my internal AI usage monitor
 | **Hydration** (off by default) | — | progress | +250 ml |
 | **Idle eyes** | blink and glance when everything is calm | — | — |
 
-Hover is a compact, read-only glance. Click the pill to open actions and
+Hover is a compact, paged island — ◀ ▶ flips between activities (overview,
+media, focus, AI, battery, water) with dots showing position; rows stay
+read-only and actions live in the click menu. Click the pill for actions and
 settings: toggle **🧩 Modules**, pick a **🎨 Pill style** — glass droplet
 (glow border, default), flat pill, outline or mist — choose the **↔ Pill width**
 (compact / regular / wide), or switch **AI chips in pill** on/off. Settings

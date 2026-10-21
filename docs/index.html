@@ -169,6 +169,20 @@ h1{
 }
 .notch:hover .island,.notch.open .island{opacity:1}
 .island .date{font-size:10.5px;font-weight:700;color:var(--muted)}
+/* island pager: ◀ ▶ flip between activities */
+.pager{display:flex;align-items:center;gap:8px}
+.pgbtn{
+  font-family:var(--font);width:24px;height:26px;border-radius:8px;flex:none;
+  background:rgba(255,255,255,.08);border:none;color:var(--text);
+  font-size:11px;font-weight:700;cursor:pointer;
+  transition:background .15s;
+}
+.pgbtn:hover{background:rgba(255,255,255,.18)}
+.pages{display:flex;flex-direction:column;gap:5px;min-height:96px;justify-content:center}
+.pg{display:flex;flex-direction:column;gap:5px}
+.dots{display:flex;gap:4px;justify-content:center;margin-top:2px}
+.dots i{width:5px;height:5px;border-radius:3px;background:rgba(232,234,237,.22)}
+.dots i.on{background:rgba(232,234,237,.9)}
 .irow{display:flex;align-items:center;gap:8px;white-space:nowrap}
 .irow .grow{flex:1}
 .irow .bar{width:64px;height:6px;border-radius:3px;background:rgba(255,255,255,.10);overflow:hidden;flex:none}
@@ -347,35 +361,48 @@ footer a:hover{color:var(--text)}
               <span class="clock" data-clock>—</span>
             </div>
             <div class="island">
-              <div class="date">Tuesday, October 21</div>
-              <div class="irow">
-                <span class="play">▶</span>
-                <span class="track">Middleware — Overmono</span>
-              </div>
-              <div class="irow">
-                <span class="tagc" style="color:var(--accent)">✦coding</span>
-                <span class="bar"><i style="width:72%;background:var(--warn)"></i></span>
-                <span style="color:var(--warn);font-weight:700">72%</span>
-                <span class="reset" data-reset>↻ 2h 31m</span>
-              </div>
-              <div class="irow">
-                <span class="tagc" style="color:var(--violet)">✦plus2</span>
-                <span class="bar"><i style="width:54%;background:var(--ok)"></i></span>
-                <span style="color:var(--ok);font-weight:700">54%</span>
-                <span class="sub">↻ 5h 12m @ <span data-end2>—</span></span>
-              </div>
-              <div class="irow">
-                <span>🔋 87%</span><span class="grow"></span>
-                <span class="bar"><i style="width:87%;background:var(--ok)"></i></span>
-              </div>
-              <div class="irow">
-                <span>💧 1250 / 2000 ml</span><span class="grow"></span>
-                <span class="bar" style="width:52px"><i style="width:62%;background:var(--accent)"></i></span>
+              <div class="pager">
+                <button class="pgbtn" id="pgPrev" aria-label="Previous activity">◀</button>
+                <div class="pages">
+                  <div class="pg">
+                    <div class="date">Tuesday, October 21</div>
+                    <div class="irow"><span style="color:var(--text);font-weight:700">▶  Middleware</span></div>
+                    <div class="irow"><span style="color:var(--accent);font-weight:700">🎯 24:59</span><span class="sub">focus</span></div>
+                    <div class="irow"><strong style="color:var(--warn)">✦ 72%</strong><span class="reset" data-reset>↻ 2h 31m</span></div>
+                  </div>
+                  <div class="pg" hidden>
+                    <div class="date">Now playing</div>
+                    <div class="irow"><span class="play">▶</span><span class="track">Middleware — Overmono</span></div>
+                    <div class="sub" style="margin-top:2px">controls in the click menu</div>
+                  </div>
+                  <div class="pg" hidden>
+                    <div class="date">AI quotas</div>
+                    <div class="irow">
+                      <span class="tagc" style="color:var(--accent)">✦coding</span>
+                      <span class="bar"><i style="width:72%;background:var(--warn)"></i></span>
+                      <span style="color:var(--warn);font-weight:700">72%</span>
+                      <span class="reset" data-reset>↻ 2h 31m</span>
+                    </div>
+                    <div class="irow">
+                      <span class="tagc" style="color:var(--violet)">✦plus2</span>
+                      <span class="bar"><i style="width:54%;background:var(--ok)"></i></span>
+                      <span style="color:var(--ok);font-weight:700">54%</span>
+                      <span class="sub">↻ 5h 12m @ <span data-end2>—</span></span>
+                    </div>
+                  </div>
+                  <div class="pg" hidden>
+                    <div class="date">Battery &amp; water</div>
+                    <div class="irow"><span>🔋 87%</span><span class="bar"><i style="width:87%;background:var(--ok)"></i></span></div>
+                    <div class="irow"><span>💧 1250 / 2000 ml</span><span class="bar" style="width:52px"><i style="width:62%;background:var(--accent)"></i></span></div>
+                  </div>
+                  <div class="dots" id="pgDots"></div>
+                </div>
+                <button class="pgbtn" id="pgNext" aria-label="Next activity">▶</button>
               </div>
             </div>
           </div>
         </div>
-        <div class="hint">hover the notch — it springs open</div>
+        <div class="hint">hover the notch — it springs open; ◀ ▶ flip the activities</div>
       </div>
     </div>
   </div>
@@ -559,6 +586,21 @@ footer a:hover{color:var(--text)}
   }
   tick();
   setInterval(tick, 1000);
+
+  // island pager: ◀ ▶ flip between activities, dots show position
+  var pgs = Array.from(document.querySelectorAll('.pg'));
+  var dotsBox = document.getElementById('pgDots');
+  pgs.forEach(function () { dotsBox.appendChild(document.createElement('i')); });
+  var dots = Array.from(dotsBox.children);
+  var pgIdx = 0;
+  function showPg(i) {
+    pgIdx = (i + pgs.length) % pgs.length;
+    pgs.forEach(function (p, k) { p.hidden = k !== pgIdx; });
+    dots.forEach(function (d, k) { d.classList.toggle('on', k === pgIdx); });
+  }
+  document.getElementById('pgPrev').addEventListener('click', function () { showPg(pgIdx - 1); });
+  document.getElementById('pgNext').addEventListener('click', function () { showPg(pgIdx + 1); });
+  showPg(0);
 
   // touch devices: tap toggles the island
   var notch = document.getElementById('notch');
