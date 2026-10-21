@@ -116,6 +116,7 @@ const DEFAULT_CONFIG = {
         focus: true,
         battery: true,
         ai: true,
+        ghome: false,
         water: false,
         eyes: true,
     },
@@ -178,6 +179,16 @@ function _resetClockText(ms) {
         return '';
     const dt = GLib.DateTime.new_from_unix_local(Math.floor(ms / 1000));
     return ms - Date.now() >= 86400000 ? dt.format('%a %H:%M') : dt.format('%H:%M');
+}
+
+function _ghomeIcon(type) {
+    switch (type) {
+        case 'light': return '💡';
+        case 'socket': return '🔌';
+        case 'switch': return '🔘';
+        case 'thermostat': return '🌡️';
+        default: return '🏠';
+    }
 }
 
 // Accounts to surface everywhere (pill + island). summary.panel_accounts is
@@ -560,7 +571,11 @@ class NotchBar extends PanelMenu.Button {
         const ai = st.ai ? _panelAccounts(st.ai)
             .map(a => `${a.short}:${Math.round(a.used_pct)}:${a.reset_ms}`) : null;
         const bat = st.battery ? [st.battery.pct, st.battery.charging] : null;
-        return JSON.stringify([this._app.cfgVersion, media, focus, ai, bat,
+        const gh = st.ghome ? [
+            (st.ghome.summary || {}).active_count || 0,
+            (st.ghome.devices || []).map(d => `${d.name}:${d.state}`).join(','),
+        ] : null;
+        return JSON.stringify([this._app.cfgVersion, media, focus, ai, bat, gh,
             st.water ? [st.water.date, st.water.ml] : null, this._dayStr()]);
     }
 
@@ -697,6 +712,14 @@ class NotchBar extends PanelMenu.Button {
                 style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${batteryLow ? T.warn : T.ok};`,
             }));
         }
+
+        if (!aiMode && mods.ghome && st.ghome && st.ghome.summary &&
+            st.ghome.summary.has_active)
+            chips.add_child(new St.Label({
+                text: `🏠 ${st.ghome.summary.active_count}`,
+                y_align: Clutter.ActorAlign.CENTER,
+                style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${T.ok};`,
+            }));
 
         if (chips.get_children().length > 0)
             this._collapsedBox.add_child(chips);
@@ -960,6 +983,42 @@ class NotchBar extends PanelMenu.Button {
             });
         }
 
+        if (mods.ghome && st.ghome && (st.ghome.devices || []).length) {
+            const g = st.ghome;
+            pages.push({
+                build: () => {
+                    const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
+                    const s = g.summary || {};
+                    box.add_child(lbl(`🏠 home  ${s.has_active ? `${s.active_count} on` : 'all off'}`,
+                        `font-size: 14px; font-weight: 700; color: ${s.has_active ? T.ok : T.muted};`));
+                    g.devices.slice(0, 5).forEach(d => {
+                        const on = d.state === 'on';
+                        const offline = d.state === 'offline';
+                        const row = new St.BoxLayout({
+                            style: 'spacing: 8px;',
+                            y_align: Clutter.ActorAlign.CENTER,
+                        });
+                        row.add_child(lbl(_ghomeIcon(d.type), 'font-size: 12.5px;'));
+                        row.add_child(lbl(String(d.name || 'device'),
+                            `font-size: 12.5px; font-weight: 700; color: ${T.text};`));
+                        row.add_child(new St.Widget({ x_expand: true }));
+                        if (d.room)
+                            row.add_child(lbl(`${d.room} · `,
+                                `font-size: 10.5px; color: ${T.muted};`));
+                        row.add_child(lbl(offline ? 'offline' : (on ? 'on' : 'off'),
+                            `font-size: 12px; font-weight: 700; color: ${offline ? T.err : (on ? T.ok : T.muted)};`));
+                        box.add_child(row);
+                    });
+                    if (g.devices.length > 5)
+                        box.add_child(lbl(`+${g.devices.length - 5} more devices`,
+                            `font-size: 10.5px; color: ${T.muted};`));
+                    box.add_child(lbl('toggle from the click menu',
+                        `font-size: 10.5px; color: ${T.muted};`));
+                    return box;
+                },
+            });
+        }
+
         if (mods.water) {
             pages.push({
                 build: () => {
@@ -1201,6 +1260,19 @@ class NotchBar extends PanelMenu.Button {
             this.menu.addMenuItem(waterItem);
         }
 
+        if (mods.ghome && st.ghome && (st.ghome.devices || []).length) {
+            (st.ghome.devices || []).slice(0, 8).forEach(d => {
+                const on = d.state === 'on';
+                const item = new PopupMenu.PopupMenuItem(
+                    `${_ghomeIcon(d.type)}  ${d.name}  ·  ${on ? 'on' : 'off'}`);
+                item.connect('activate', () => app.ghomeToggle(d.name));
+                this.menu.addMenuItem(item);
+            });
+            const allOff = new PopupMenu.PopupMenuItem('🏠  All devices off');
+            allOff.connect('activate', () => app.ghomeSetAll('off'));
+            this.menu.addMenuItem(allOff);
+        }
+
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
         const modsSub = new PopupMenu.PopupSubMenuMenuItem('🧩  Modules');
@@ -1209,6 +1281,7 @@ class NotchBar extends PanelMenu.Button {
             ['focus', '🎯  Focus timer'],
             ['battery', '🔋  Battery'],
             ['ai', '✦  AI quota'],
+            ['ghome', '🏠  Google Home'],
             ['water', '💧  Hydration'],
             ['eyes', '👀  Idle eyes'],
         ];
@@ -1325,6 +1398,7 @@ class NotchApp {
             focus: { phase: 'idle', endsAt: 0, totalMs: 0 },
             battery: null,
             ai: null,
+            ghome: null,
             water: this.cfg.water,
         };
 
@@ -1335,6 +1409,8 @@ class NotchApp {
 
         this._pollBattery();
         this._pollAI();
+        if (this.cfg.modules.ghome)
+            this._pollGHome();
         this._fastTimer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1,
             () => this._tick());
         this._scheduleSlowPoll();
@@ -1384,6 +1460,8 @@ class NotchApp {
         this._pollBattery();
         if (this.cfg.modules.ai)
             this._pollAI();
+        if (this.cfg.modules.ghome)
+            this._pollGHome();
         return GLib.SOURCE_CONTINUE;
     }
 
@@ -1455,6 +1533,46 @@ class NotchApp {
         }
     }
 
+    // Google Home: shared collector with google-home-panel; no-op when the
+    // script is missing so the module stays dormant elsewhere.
+    _runGHome(args) {
+        try {
+            const script = GLib.build_filenamev([this._loader.path, 'ghome-collector.py']);
+            const proc = new Gio.Subprocess({
+                argv: ['python3', script, ...args],
+                flags: Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE,
+            });
+            proc.init(null);
+            proc.communicate_utf8_async(null, null, (obj, res) => {
+                try {
+                    const [ok, stdout, stderr] = proc.communicate_utf8_finish(res);
+                    if (ok && stdout) {
+                        this.state.ghome = JSON.parse(stdout);
+                        this._notch && this._notch.render();
+                    } else {
+                        log(`[Notch] ghome collector failed: ${stderr}`);
+                    }
+                } catch (e) {
+                    log(`[Notch] ghome parse failed: ${e}`);
+                }
+            });
+        } catch (e) {
+            log(`[Notch] ghome spawn failed: ${e}`);
+        }
+    }
+
+    _pollGHome() {
+        this._runGHome([]);
+    }
+
+    ghomeToggle(name) {
+        this._runGHome(['--toggle', String(name)]);
+    }
+
+    ghomeSetAll(state) {
+        this._runGHome([`--${state}`, 'all']);
+    }
+
     /* ----- actions ----- */
 
     setModule(key, val) {
@@ -1465,6 +1583,8 @@ class NotchApp {
             this._mediaChanged();
         if (key === 'ai' && val)
             this._pollAI();
+        if (key === 'ghome' && val)
+            this._pollGHome();
         this._notch && this._notch.render();
     }
 
@@ -1480,6 +1600,8 @@ class NotchApp {
             this._mediaChanged();
         if (this.cfg.modules.ai)
             this._pollAI();
+        if (this.cfg.modules.ghome && !previous.modules.ghome)
+            this._pollGHome();
         if (this.cfg.modules.ai !== previous.modules.ai ||
             this.cfg.ai.poll_sec !== previous.ai.poll_sec)
             this._scheduleSlowPoll();

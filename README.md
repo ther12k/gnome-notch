@@ -21,6 +21,7 @@ Windows. The AI-quota module spun out of my internal AI usage monitor
 | **Focus timer** | countdown while active | countdown + progress | start work / break, or stop |
 | **Battery** | warning/charging indicator when relevant | percentage + bar | — |
 | **AI quota** | highest-used account percentage + bar | up to three account rows with reset countdowns | — |
+| **Google Home** (off by default) | 🏠 N-on chip while devices are active | device states per room | toggle each device · all off |
 | **Hydration** (off by default) | — | progress | +250 ml |
 | **Idle eyes** | blink and glance when everything is calm | — | — |
 
