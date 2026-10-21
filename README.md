@@ -1,5 +1,7 @@
 # Notch — a living notch for GNOME Shell
 
+**[Website](https://ther12k.github.io/gnome-notch/)** · screenshots, live demo and FAQ.
+
 A small, dark droplet pill hangs from the top-center of your screen — a
 macOS-style notch for GNOME. It shows the time at a glance, glances back
 with a pair of eyes when everything is calm, and springs open into a
@@ -12,18 +14,21 @@ Windows. The AI-quota module spun out of my internal AI usage monitor
 
 ## What lives in the notch
 
-| Module | Pill | Hover island | Menu |
+| Module | Resting pill | Hover island | Click menu |
 |---|---|---|---|
-| **Clock** | big time | date line | — |
-| **Media** (MPRIS) | ▶ chip while playing | prev / play-pause / next + track | media controls |
-| **Focus timer** | ⏱ countdown chip | progress bar + stop | start focus 25m / break 5m / stop |
-| **Battery** | ⚡ / 🔋 chip when charging or low | % + bar | — |
-| **AI quota** | ✦ worst % chip | per-account bars + reset countdowns | — |
-| **Hydration** (off by default) | — | 💧 progress + quick add | +250 ml |
-| **Idle eyes** | blinks and glances when nothing is happening | — | — |
+| **Clock** | time | date | — |
+| **Media** (MPRIS) | play indicator while playing | current track | previous / play-pause / next |
+| **Focus timer** | countdown while active | countdown + progress | start work / break, or stop |
+| **Battery** | warning/charging indicator when relevant | percentage + bar | — |
+| **AI quota** | highest-used account percentage + bar | up to three account rows with reset countdowns | — |
+| **Hydration** (off by default) | — | progress | +250 ml |
+| **Idle eyes** | blink and glance when everything is calm | — | — |
 
-Everything is a module — toggle any of them off from **🧩 Modules** in the
-click menu. Settings live in `~/.config/gnome-notch/config.json`.
+Hover is a compact, read-only glance. Click the pill to open actions and
+settings: toggle **🧩 Modules**, choose **🎨 Pill style**, or switch **AI chips
+in pill** on/off. The default glass style has the droplet edge and glow. Settings
+live in `~/.config/gnome-notch/config.json`; after editing the file, choose
+**↻ Reload settings** in the menu to apply changes without restarting GNOME Shell.
 
 ## Install
 

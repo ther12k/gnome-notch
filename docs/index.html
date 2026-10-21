@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notch — a living notch for GNOME Shell</title>
+<meta name="description" content="A small, dark droplet hangs from the top-center of your GNOME desktop. Music, focus timer, AI quotas, battery and water — one hover away. Free & open source.">
+<meta property="og:title" content="Notch — a living notch for GNOME Shell">
+<meta property="og:description" content="The top of your screen, alive. Music, focus, AI quotas, battery and water — one hover away.">
+<meta property="og:url" content="https://ther12k.github.io/gnome-notch/">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#0a0b0e">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 0h24v22a12 12 0 0 1-12 12A12 12 0 0 1 4 22Z' fill='%230d0f13' stroke='rgba(255,255,255,.25)'/%3E%3Ccircle cx='12' cy='16' r='2.4' fill='%23e8eaed'/%3E%3Ccircle cx='20' cy='16' r='2.4' fill='%23e8eaed'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#0a0b0e;
+  --bg2:#0d0f13;
+  --card:rgba(255,255,255,.045);
+  --card-border:rgba(255,255,255,.085);
+  --text:#e8eaed;
+  --muted:rgba(232,234,237,.55);
+  --accent:#7ab8ff;
+  --ok:#3fd68f;
+  --warn:#f5b455;
+  --err:#f47174;
+  --violet:#b59aff;
+  --pink:#ff9ecb;
+  --cyan:#6fd9e8;
+  --pill-bg:rgba(13,15,19,.90);
+  --pill-hover:rgba(23,26,33,.96);
+  --pill-border:rgba(255,255,255,.10);
+  --font:"Inter","Cantarell","Ubuntu Sans",system-ui,sans-serif;
+  --spring:cubic-bezier(.34,1.56,.64,1);
+  --out:cubic-bezier(.22,1,.36,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--font);
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:1060px;margin:0 auto;padding:0 24px}
+
+/* ---------- hero ---------- */
+.hero{
+  position:relative;
+  padding:0 0 96px;
+  background:
+    radial-gradient(900px 420px at 50% -80px, rgba(122,184,255,.14), transparent 65%),
+    radial-gradient(700px 380px at 80% 10%, rgba(181,154,255,.08), transparent 60%),
+    linear-gradient(180deg,#0c0e13 0%, var(--bg) 55%);
+  border-bottom:1px solid rgba(255,255,255,.06);
+}
+.hero-top{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:22px 0;font-size:14px;color:var(--muted);
+}
+.hero-top .brand{display:flex;align-items:center;gap:10px;color:var(--text);font-weight:700}
+.brand svg{display:block}
+.hero-top nav{display:flex;gap:22px}
+.hero-top nav a{color:var(--muted)}
+.hero-top nav a:hover{color:var(--text);text-decoration:none}
+.badge{
+  display:inline-flex;align-items:center;gap:8px;
+  font-size:12.5px;font-weight:600;color:var(--muted);
+  border:1px solid var(--card-border);border-radius:999px;
+  padding:6px 14px;background:var(--card);
+  margin:64px auto 0;
+}
+.badge .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
+h1{
+  font-size:clamp(34px,5.4vw,58px);
+  font-weight:800;letter-spacing:-.02em;line-height:1.12;
+  text-align:center;margin:22px auto 0;max-width:760px;
+}
+.tagline{
+  text-align:center;color:var(--muted);font-size:clamp(15px,2vw,18px);
+  max-width:640px;margin:18px auto 0;
+}
+.install{
+  margin:34px auto 0;display:flex;gap:12px;justify-content:center;flex-wrap:wrap;
+}
+.install code{
+  font-family:"JetBrains Mono","Fira Code",ui-monospace,monospace;
+  font-size:13.5px;color:#cfd6e4;background:#101319;
+  border:1px solid var(--card-border);border-radius:12px;padding:12px 18px;
+}
+.install code .cmt{color:rgba(232,234,237,.38)}
+.install code .p{color:var(--accent)}
+.btns{display:flex;gap:12px;justify-content:center;margin-top:20px;flex-wrap:wrap}
+.btn{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:11px 22px;border-radius:12px;font-size:14.5px;font-weight:600;
+  border:1px solid var(--card-border);color:var(--text);background:var(--card);
+  transition:background .18s,border-color .18s,transform .18s;
+}
+.btn:hover{text-decoration:none;background:rgba(255,255,255,.09);border-color:rgba(255,255,255,.16);transform:translateY(-1px)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#0b1220}
+.btn.primary:hover{background:#8fc4ff;border-color:#8fc4ff}
+
+/* ---------- interactive notch demo ---------- */
+.demo{
+  margin:64px auto 0;max-width:860px;
+  border:1px solid var(--card-border);border-radius:18px;
+  background:
+    radial-gradient(420px 200px at 30% 0%, rgba(122,184,255,.10), transparent 70%),
+    radial-gradient(420px 220px at 75% 20%, rgba(244,158,197,.07), transparent 70%),
+    linear-gradient(160deg,#161a27 0%,#111420 45%,#0e1017 100%);
+  position:relative;overflow:hidden;
+  box-shadow:0 24px 60px rgba(0,0,0,.45);
+}
+/* fake GNOME top bar behind the notch */
+.demo .panel{
+  height:30px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 14px;font-size:12px;color:rgba(232,234,237,.5);
+  background:rgba(0,0,0,.35);border-bottom:1px solid rgba(255,255,255,.04);
+  position:relative;z-index:2;
+}
+.demo .panel .center{position:absolute;left:50%;transform:translateX(-50%);opacity:.4}
+.demo .hint{
+  position:absolute;bottom:14px;left:0;right:0;text-align:center;
+  font-size:12.5px;color:rgba(232,234,237,.42);z-index:2;
+}
+.demo-body{height:290px;position:relative}
+
+/* the notch itself — a faithful CSS replica of the extension */
+.notch{position:absolute;top:0;left:50%;transform:translateX(-50%);z-index:3}
+.notch-box{
+  background:var(--pill-bg);
+  border:1px solid var(--pill-border);border-top-width:0;
+  border-radius:0 0 22px 22px;
+  box-shadow:0 10px 28px rgba(0,0,0,.55);
+  width:340px;height:30px;overflow:hidden;position:relative;
+  transition:width .3s var(--spring),height .3s var(--spring),
+    background .2s,border-color .2s,box-shadow .3s;
+}
+.notch:hover .notch-box,.notch.open .notch-box{
+  width:372px;height:212px;
+  background:var(--pill-hover);
+  border-color:rgba(255,255,255,.18);
+  box-shadow:0 14px 34px rgba(0,0,0,.6);
+}
+.pill-row{
+  position:absolute;inset:0 14px;display:flex;align-items:center;gap:9px;
+  opacity:1;transition:opacity .12s var(--out);
+  font-size:11.5px;font-weight:700;white-space:nowrap;
+}
+.notch:hover .pill-row,.notch.open .pill-row{opacity:0}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 7px var(--ok);flex:none}
+.pct{color:var(--ok)}
+.mini{width:36px;height:6px;border-radius:3px;background:rgba(255,255,255,.10);overflow:hidden;flex:none}
+.mini i{display:block;height:100%;background:var(--ok);border-radius:3px}
+.reset{font-weight:700;color:var(--text);font-size:12px}
+.count{color:var(--muted);font-weight:600;font-size:10px}
+.clock{margin-left:auto;color:var(--text);font-size:12.5px}
+
+.island{
+  position:absolute;left:14px;right:14px;top:9px;
+  opacity:0;pointer-events:none;
+  transition:opacity .26s var(--out) .1s;
+  display:flex;flex-direction:column;gap:6px;
+  font-size:11.5px;
+}
+.notch:hover .island,.notch.open .island{opacity:1}
+.island .date{font-size:10.5px;font-weight:700;color:var(--muted)}
+.irow{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.irow .grow{flex:1}
+.irow .bar{width:64px;height:6px;border-radius:3px;background:rgba(255,255,255,.10);overflow:hidden;flex:none}
+.irow .bar i{display:block;height:100%;border-radius:3px}
+.play{color:var(--text);font-weight:700}
+.track{color:var(--text);font-weight:700;overflow:hidden;text-overflow:ellipsis}
+.sub{color:var(--muted);font-size:10.5px}
+.tagc{font-weight:700;min-width:34px}
+
+/* ---------- sections ---------- */
+section{padding:88px 0}
+.kicker{
+  font-size:12.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--accent);text-align:center;
+}
+h2{
+  font-size:clamp(24px,3.4vw,34px);font-weight:800;letter-spacing:-.01em;
+  text-align:center;margin:12px auto 0;max-width:640px;
+}
+.lede{text-align:center;color:var(--muted);max-width:560px;margin:14px auto 0}
+
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:44px}
+@media(max-width:880px){.grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:600px){.grid{grid-template-columns:1fr}}
+.tile{
+  background:var(--card);border:1px solid var(--card-border);border-radius:16px;
+  padding:18px;display:flex;flex-direction:column;gap:10px;
+  transition:transform .2s,border-color .2s;
+}
+.tile:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.15)}
+.tile h3{font-size:15px;font-weight:700}
+.tile p{color:var(--muted);font-size:13.5px;line-height:1.55}
+.stage{
+  border-radius:12px;padding:14px;
+  background:linear-gradient(150deg,#141826,#0f1119);
+  border:1px solid rgba(255,255,255,.06);
+  min-height:84px;display:flex;flex-direction:column;gap:8px;justify-content:center;
+  font-size:12px;
+}
+.srow{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.srow .bar{width:70px;height:6px;border-radius:3px;background:rgba(255,255,255,.10);overflow:hidden;flex:none}
+.srow .bar i{display:block;height:100%;border-radius:3px}
+.dim{color:var(--muted)}
+strong.c{font-weight:700}
+
+/* eyes */
+.eyes{display:flex;gap:9px;align-items:center}
+.eye{width:15px;height:10px;border-radius:6px;background:rgba(232,234,237,.92);position:relative;overflow:hidden}
+.eye i{position:absolute;top:3px;left:5px;width:4px;height:4px;border-radius:50%;background:#14161c}
+@keyframes blink{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.1)}}
+.eye{animation:blink 4.6s infinite}
+.eye:nth-child(2){animation-delay:.08s}
+@keyframes glance{0%,100%{transform:translateX(0)}30%{transform:translateX(2.5px)}70%{transform:translateX(-2.5px)}}
+.eye i{animation:glance 7s ease-in-out infinite}
+
+/* rest section */
+.trio{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:44px}
+@media(max-width:880px){.trio{grid-template-columns:1fr}}
+.trio .tile{text-align:left}
+.trio .ico{font-size:22px}
+
+/* styles section */
+.styles{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:44px}
+@media(max-width:720px){.styles{grid-template-columns:1fr}}
+.stylecard{
+  border-radius:16px;border:1px solid var(--card-border);background:var(--card);
+  padding:22px;text-align:center;
+}
+.stylecard .name{font-weight:700;margin-top:14px}
+.stylecard .desc{color:var(--muted);font-size:13px;margin-top:4px}
+.droplet{
+  width:250px;height:30px;margin:0 auto;
+  background:var(--pill-bg);
+  border:1px solid var(--pill-border);border-top-width:0;
+  border-radius:0 0 22px 22px;
+  box-shadow:0 10px 28px rgba(0,0,0,.55),0 0 24px rgba(253,214,99,.16);
+  display:flex;align-items:center;justify-content:center;gap:8px;font-size:11.5px;font-weight:700;
+}
+.flatpill{
+  width:250px;height:32px;margin:0 auto;
+  background:rgba(15,17,23,.92);border-radius:17px;
+  box-shadow:0 3px 14px rgba(0,0,0,.5);
+  display:flex;align-items:center;justify-content:center;gap:8px;font-size:11.5px;font-weight:700;
+}
+
+/* faq */
+.faq{max-width:720px;margin:40px auto 0;display:flex;flex-direction:column;gap:10px}
+details{
+  background:var(--card);border:1px solid var(--card-border);border-radius:14px;
+  padding:16px 20px;
+}
+details summary{cursor:pointer;font-weight:600;font-size:14.5px;list-style:none;display:flex;justify-content:space-between;gap:12px}
+details summary::after{content:"+";color:var(--muted);font-weight:400}
+details[open] summary::after{content:"–"}
+details p{color:var(--muted);font-size:14px;margin-top:10px}
+details p code{background:#101319;border:1px solid var(--card-border);border-radius:6px;padding:1px 6px;font-size:12.5px;color:#cfd6e4}
+
+/* footer */
+footer{
+  border-top:1px solid rgba(255,255,255,.06);
+  padding:40px 0 56px;color:var(--muted);font-size:13.5px;
+}
+footer .cols{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap}
+footer a{color:var(--muted)}
+footer a:hover{color:var(--text)}
+
+@media (prefers-reduced-motion: reduce){
+  *{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="hero-top">
+      <span class="brand">
+        <svg width="18" height="18" viewBox="0 0 32 32"><path d="M4 0h24v22a12 12 0 0 1-12 12A12 12 0 0 1 4 22Z" fill="#0d0f13" stroke="rgba(255,255,255,.25)"/><circle cx="12" cy="16" r="2.4" fill="#e8eaed"/><circle cx="20" cy="16" r="2.4" fill="#e8eaed"/></svg>
+        Notch
+      </span>
+      <nav>
+        <a href="#modules">Features</a>
+        <a href="#styles">Styles</a>
+        <a href="#faq">FAQ</a>
+        <a href="https://github.com/ther12k/gnome-notch">GitHub</a>
+      </nav>
+    </div>
+
+    <div style="text-align:center"><span class="badge"><span class="dot"></span>Free &amp; open source · GNOME Shell 46</span></div>
+    <h1>The top of your screen, alive.</h1>
+    <p class="tagline">Notch is a small, dark droplet that hangs from the top-center of your GNOME desktop. It springs open when you hover, keeps your music, focus timer, AI quotas, battery and water one glance away — and blinks back when everything is calm.</p>
+
+    <div class="install"><code><span class="cmt"># install &amp; enable</span> <span class="p">git clone</span> https://github.com/ther12k/gnome-notch.git <span class="p">&amp;&amp; cd</span> gnome-notch <span class="p">&amp;&amp;</span> ./deploy.sh</code></div>
+    <div class="btns">
+      <a class="btn primary" href="https://github.com/ther12k/gnome-notch">★ Star on GitHub</a>
+      <a class="btn" href="#faq">Read the FAQ</a>
+    </div>
+
+    <div class="demo">
+      <div class="panel">
+        <span>Activities</span>
+        <span class="center" data-clock>—</span>
+        <span>⌨ 🔊 🔋</span>
+      </div>
+      <div class="demo-body">
+        <div class="notch" id="notch">
+          <div class="notch-box">
+            <div class="pill-row">
+              <span class="status-dot"></span>
+              <span class="pct">✦ 72%</span>
+              <span class="mini"><i style="width:72%"></i></span>
+              <span class="reset" data-reset>↻ 2h 31m</span>
+              <span class="count">×2</span>
+              <span class="clock" data-clock>—</span>
+            </div>
+            <div class="island">
+              <div class="date">Tuesday, October 21</div>
+              <div class="irow">
+                <span class="play">▶</span>
+                <span class="track">Middleware — Overmono</span>
+              </div>
+              <div class="irow">
+                <span class="tagc" style="color:var(--accent)">✦coding</span>
+                <span class="bar"><i style="width:72%;background:var(--warn)"></i></span>
+                <span style="color:var(--warn);font-weight:700">72%</span>
+                <span class="reset" data-reset>↻ 2h 31m</span>
+              </div>
+              <div class="irow">
+                <span class="tagc" style="color:var(--violet)">✦plus2</span>
+                <span class="bar"><i style="width:54%;background:var(--ok)"></i></span>
+                <span style="color:var(--ok);font-weight:700">54%</span>
+                <span class="sub">↻ 5h 12m @ <span data-end2>—</span></span>
+              </div>
+              <div class="irow">
+                <span>🔋 87%</span><span class="grow"></span>
+                <span class="bar"><i style="width:87%;background:var(--ok)"></i></span>
+              </div>
+              <div class="irow">
+                <span>💧 1250 / 2000 ml</span><span class="grow"></span>
+                <span class="bar" style="width:52px"><i style="width:62%;background:var(--accent)"></i></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="hint">hover the notch — it springs open</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="modules">
+  <div class="wrap">
+    <p class="kicker">Modules</p>
+    <h2>Everything you glance at, in one place.</h2>
+    <p class="lede">Every module is a small, read-only row — exactly what you need at a glance, nothing more. Toggle any of them off from the click menu.</p>
+
+    <div class="grid">
+      <div class="tile">
+        <div class="stage">
+          <div class="srow"><span style="color:var(--text);font-weight:700">▶ Middleware — Overmono</span></div>
+          <div class="srow dim" style="font-size:11px">prev · play/pause · next live in the click menu</div>
+        </div>
+        <h3>🎵 Music, right where it plays</h3>
+        <p>Any MPRIS player — Spotify, Firefox, mpv — shows the current track in the hover island, with controls one click away.</p>
+      </div>
+      <div class="tile">
+        <div class="stage">
+          <div class="srow"><span>🎯</span><strong class="c" style="color:var(--accent)">24:59</strong><span class="dim">focus</span></div>
+          <div class="srow"><span class="bar"><i style="width:8%;background:var(--accent)"></i></span></div>
+        </div>
+        <h3>🎯 Focus timer built in</h3>
+        <p>Start a 25-minute work sprint or a 5-minute break from the menu. The countdown lives in the pill until you finish.</p>
+      </div>
+      <div class="tile">
+        <div class="stage">
+          <div class="srow"><strong class="c" style="color:var(--warn)">✦c 72%</strong><span class="bar"><i style="width:72%;background:var(--warn)"></i></span><strong class="c">↻ 2h 31m @ <span data-end1>—</span></strong></div>
+          <div class="srow"><strong class="c" style="color:var(--ok)">✦p2 54%</strong><span class="bar"><i style="width:54%;background:var(--ok)"></i></span><span class="dim">↻ 5h 12m</span></div>
+        </div>
+        <h3>✦ AI quotas, at a glance</h3>
+        <p>Per-account usage bars with live reset countdowns — time left <em>and</em> the exact clock time it resets. The pill glows amber before you hit the limit.</p>
+      </div>
+      <div class="tile">
+        <div class="stage">
+          <div class="srow"><span>⚡ 87%</span><span class="bar"><i style="width:87%;background:var(--ok)"></i></span></div>
+        </div>
+        <h3>🔋 Battery, only when it matters</h3>
+        <p>Stays quiet on AC. Shows charging and warns you when it runs low.</p>
+      </div>
+      <div class="tile">
+        <div class="stage">
+          <div class="srow"><span>💧 1250 / 2000 ml</span><span class="bar"><i style="width:62%;background:var(--accent)"></i></span></div>
+        </div>
+        <h3>💧 A gentle water reminder</h3>
+        <p>Log a glass from the menu; the island tracks your daily goal. Off by default.</p>
+      </div>
+      <div class="tile">
+        <div class="stage">
+          <div class="srow"><span class="eyes"><span class="eye"><i></i></span><span class="eye"><i></i></span></span><span class="dim" style="font-size:11px">…everything is calm</span></div>
+        </div>
+        <h3>👀 It glances back</h3>
+        <p>When nothing is playing and no timer runs, a pair of eyes blinks and glances around. Purely because notches deserve personality.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="rest" style="background:linear-gradient(180deg,var(--bg),#0c0d11 50%,var(--bg));border-top:1px solid rgba(255,255,255,.05);border-bottom:1px solid rgba(255,255,255,.05)">
+  <div class="wrap">
+    <p class="kicker">Low-key by design</p>
+    <h2>A small companion that knows when to rest.</h2>
+    <p class="lede">One tiny pill. No dashboard, no noise, no accounts.</p>
+    <div class="trio">
+      <div class="tile"><div class="ico">🤫</div><h3>Quiet when idle</h3><p>The eyes close when you're busy and open when it's calm. No popups, no nagging — the notch only grows when you ask it to.</p></div>
+      <div class="tile"><div class="ico">🖥️</div><h3>Steps aside for work</h3><p>Go fullscreen and the notch disappears instantly — movies, games and presentations get the whole screen.</p></div>
+      <div class="tile"><div class="ico">🔒</div><h3>Local &amp; private</h3><p>Everything lives in a small JSON config on your machine. No accounts, no cloud, no telemetry — your AI keys never leave your computer.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="styles">
+  <div class="wrap">
+    <p class="kicker">Appearance</p>
+    <h2>Pick your droplet.</h2>
+    <p class="lede">Switch anytime from the click menu — 🎨 Pill style.</p>
+    <div class="styles">
+      <div class="stylecard">
+        <div class="droplet"><span class="status-dot"></span><span class="pct">✦ 72%</span><span class="mini"><i style="width:72%"></i></span><span class="reset" data-reset>↻ 2h 31m</span></div>
+        <div class="name">Glass droplet <span class="dim" style="font-weight:400">· default</span></div>
+        <div class="desc">Flat top, rounded bottom, soft edge glow and a deep drop shadow — the macOS look.</div>
+      </div>
+      <div class="stylecard">
+        <div class="flatpill"><span class="status-dot"></span><span class="pct">✦ 72%</span><span class="mini"><i style="width:72%"></i></span><span class="reset" data-reset>↻ 2h 31m</span></div>
+        <div class="name">Flat pill</div>
+        <div class="desc">A quiet, fully rounded pill for darker, minimal setups.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <p class="kicker">FAQ</p>
+    <h2>Good questions.</h2>
+    <div class="faq">
+      <details>
+        <summary>Which GNOME Shell versions are supported?</summary>
+        <p>GNOME Shell 46 (Ubuntu 24.04 and friends). It uses standard extension APIs — PanelMenu chrome, MPRIS, GLib timers — with no hacks into the shell.</p>
+      </details>
+      <details>
+        <summary>Do I need Python?</summary>
+        <p>Only for the AI-quota module: a small local <code>ai-collector.py</code> reads your usage. Everything else (music, focus, battery, water, eyes) is pure extension code with no dependencies.</p>
+      </details>
+      <details>
+        <summary>Why do I need to log out once after installing?</summary>
+        <p>GNOME Shell only scans the extensions directory at login, so a brand-new extension UUID isn't visible until the next sign-in. Once — then every later <code>./deploy.sh</code> hot-reloads without logging out.</p>
+      </details>
+      <details>
+        <summary>How do I configure it?</summary>
+        <p>Click the pill → toggle modules in <code>🧩 Modules</code>, pick the pill style, or open <code>~/.config/gnome-notch/config.json</code> for focus durations, water goal, poll interval and thresholds — then <code>↻ Reload settings</code> in the menu.</p>
+      </details>
+      <details>
+        <summary>Where does the AI quota data come from?</summary>
+        <p>From your own accounts: the collector reads the same config as <code>aiacctool</code> (<code>~/.config/ai-usage-monitor/</code>) and runs entirely on your machine. No data is sent anywhere.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap cols">
+    <div>
+      <div class="brand" style="display:flex;align-items:center;gap:8px;color:var(--text);font-weight:700;margin-bottom:6px">
+        <svg width="16" height="16" viewBox="0 0 32 32"><path d="M4 0h24v22a12 12 0 0 1-12 12A12 12 0 0 1 4 22Z" fill="#0d0f13" stroke="rgba(255,255,255,.25)"/><circle cx="12" cy="16" r="2.4" fill="#e8eaed"/><circle cx="20" cy="16" r="2.4" fill="#e8eaed"/></svg>
+        Notch
+      </div>
+      <div>MIT © 2026 Rizky Zulkarnaen</div>
+    </div>
+    <div style="text-align:right">
+      <div><a href="https://github.com/ther12k/gnome-notch">GitHub</a> · <a href="https://github.com/ther12k/gnome-notch/blob/main/README.md">Docs</a></div>
+      <div style="margin-top:6px">Inspired by <a href="https://rama2555.github.io/nusa/">Nusa</a> for Windows.</div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  // live clock
+  var clocks = document.querySelectorAll('[data-clock]');
+  // countdown target: 2h31m from load; reset clock shows the wall time it lands
+  var ends = [
+    { at: Date.now() + (2 * 3600 + 31 * 60) * 1000, els: document.querySelectorAll('[data-reset]') },
+    { at: Date.now() + (2 * 3600 + 31 * 60) * 1000, els: [], endEl: document.querySelector('[data-end1]') },
+    { at: Date.now() + (5 * 3600 + 12 * 60) * 1000, els: [], endEl: document.querySelector('[data-end2]') }
+  ];
+  function hhmm(t) {
+    var d = new Date(t);
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+  function tick() {
+    var d = new Date();
+    var t = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    clocks.forEach(function (e) { e.textContent = t; });
+    ends.forEach(function (c) {
+      var left = Math.max(0, Math.floor((c.at - Date.now()) / 1000));
+      var h = Math.floor(left / 3600), m = Math.floor((left % 3600) / 60);
+      var txt = '↻ ' + (h > 0 ? h + 'h ' + m + 'm' : m + 'm') + ' @ ' + hhmm(c.at);
+      c.els.forEach(function (e) { e.textContent = txt; });
+      if (c.endEl) c.endEl.textContent = hhmm(c.at);
+    });
+  }
+  tick();
+  setInterval(tick, 1000);
+
+  // touch devices: tap toggles the island
+  var notch = document.getElementById('notch');
+  notch.addEventListener('click', function (e) {
+    if (window.matchMedia('(hover: none)').matches) {
+      notch.classList.toggle('open');
+      e.preventDefault();
+    }
+  });
+})();
+</script>
+</body>
+</html>
