@@ -469,6 +469,9 @@ class NotchBar extends PanelMenu.Button {
             Math.min(natW + 2 * PAD_X, ISLAND_MAX_W));
         const innerW = targetW - 2 * PAD_X;
         this._expandedBox.set_width(innerW);
+        // rebuild the pager now that the island has its real width, so the
+        // page fills the space between the arrows instead of hugging the left
+        this._renderIsland();
         const [, natH] = this._expandedBox.get_preferred_height(innerW);
         this.ease({
             width: targetW,
@@ -740,6 +743,7 @@ class NotchBar extends PanelMenu.Button {
         const row = new St.BoxLayout({
             style: 'spacing: 8px;',
             y_align: Clutter.ActorAlign.CENTER,
+            x_expand: true,
         });
         row.add_child(this._pageBtn('◀', () => this._turnIslandPage(-1)));
 
@@ -858,31 +862,45 @@ class NotchBar extends PanelMenu.Button {
 
         if (mods.ai && st.ai) {
             const data = st.ai;
+            // panel_accounts is what the pill shows (and what non-GLM
+            // trackers populate); glm.accounts only covers GLM logins.
+            const summaryAccs = (data.summary && data.summary.panel_accounts) || [];
             const glm = data.glm || {};
-            const accounts = (glm.accounts && glm.accounts.length > 0)
+            const glmAccounts = (glm.accounts && glm.accounts.length > 0)
                 ? glm.accounts
                 : (glm.enabled ? [{ name: 'main', status: glm.status, token_quota: glm.token_quota }] : []);
-            if (accounts.length || (data.summary || {}).panel_group) {
+            if (summaryAccs.length || glmAccounts.length || (data.summary || {}).panel_group) {
                 pages.push({
                     build: () => {
-                        const box = new St.BoxLayout({ vertical: true, style: 'spacing: 4px;' });
-                        const visible = accounts.slice(0, 4);
-                        visible.forEach((acc, i) => {
-                            if (acc.status === 'ok') {
-                                const tok = acc.token_quota || {};
-                                const short = acc.name ? String(acc.name).slice(0, 7) : 'glm';
-                                box.add_child(this._aiRow(`✦${short}`,
+                        const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
+                        const bGlm = ((data.theme || {}).badge_icons &&
+                            data.theme.badge_icons.glm) || '✦';
+                        if (summaryAccs.length) {
+                            summaryAccs.slice(0, 4).forEach((a, i) => {
+                                box.add_child(this._aiRow(
+                                    `${bGlm}${a.short ? String(a.short).slice(0, 7) : ''}`,
                                     ACCOUNT_COLORS[i % ACCOUNT_COLORS.length],
-                                    tok.used_pct, tok.reset_ms));
-                            } else {
-                                box.add_child(lbl(
-                                    `✦${String(acc.name || 'glm').slice(0, 7)} offline`,
-                                    `font-size: 11px; color: ${T.err};`));
-                            }
-                        });
-                        if (accounts.length > visible.length)
-                            box.add_child(lbl(`+${accounts.length - visible.length} more accounts`,
-                                `font-size: 10.5px; color: ${T.muted};`));
+                                    a.used_pct, a.reset_ms));
+                            });
+                        } else {
+                            const visible = glmAccounts.slice(0, 4);
+                            visible.forEach((acc, i) => {
+                                if (acc.status === 'ok') {
+                                    const tok = acc.token_quota || {};
+                                    const short = acc.name ? String(acc.name).slice(0, 7) : 'glm';
+                                    box.add_child(this._aiRow(`✦${short}`,
+                                        ACCOUNT_COLORS[i % ACCOUNT_COLORS.length],
+                                        tok.used_pct, tok.reset_ms));
+                                } else {
+                                    box.add_child(lbl(
+                                        `✦${String(acc.name || 'glm').slice(0, 7)} offline`,
+                                        `font-size: 11px; color: ${T.err};`));
+                                }
+                            });
+                            if (glmAccounts.length > visible.length)
+                                box.add_child(lbl(`+${glmAccounts.length - visible.length} more accounts`,
+                                    `font-size: 10.5px; color: ${T.muted};`));
+                        }
                         const codex = data.codex || {};
                         if (codex.enabled && codex.status === 'ok')
                             box.add_child(this._aiRow('🤖5h', T.accent,
@@ -981,9 +999,10 @@ class NotchBar extends PanelMenu.Button {
     _pageBtn(glyph, onActivate) {
         const btn = new St.Button({
             label: glyph,
-            style: `${FONT}width: 28px; height: 34px; border-radius: 10px;` +
-                `background-color: rgba(255, 255, 255, 0.08);` +
-                `font-size: 13px; font-weight: 700; color: ${T.text};`,
+            style: `${FONT}width: 30px; height: 36px; border-radius: 10px;` +
+                `background-color: rgba(255, 255, 255, 0.14);` +
+                `border: 1px solid rgba(255, 255, 255, 0.12);` +
+                `font-size: 14px; font-weight: 700; color: ${T.text};`,
             y_align: Clutter.ActorAlign.CENTER,
         });
         btn.connect('clicked', onActivate);
