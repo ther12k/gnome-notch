@@ -22,10 +22,10 @@ import { MprisPlayer } from 'resource:///org/gnome/shell/ui/mpris.js';
 
 /* ---------- constants ---------- */
 
-const ISLAND_MAX_W = 380;
-const PAD_X = 14;
-const PAD_TOP = 9;
-const PAD_BOTTOM = 11;
+const ISLAND_MAX_W = 500;
+const PAD_X = 16;
+const PAD_TOP = 10;
+const PAD_BOTTOM = 12;
 
 const FONT = 'font-family: "Inter","Cantarell","Ubuntu Sans",sans-serif;';
 
@@ -121,7 +121,7 @@ const DEFAULT_CONFIG = {
     },
     clock_24h: true,
     pill_mode: 'ai',            // 'ai' = GLM chips like aiacctool, 'clock' = clock-first
-    appearance: { preset: 'glass', min_width: 120 },
+    appearance: { preset: 'glass', min_width: 260 },
     focus: { work_min: 25, break_min: 5 },
     water_goal_ml: 2000,
     water: { date: '', ml: 0 },
@@ -391,13 +391,19 @@ class NotchBar extends PanelMenu.Button {
     }
 
     _pillMinW() {
-        return Math.max(120, (this._app.cfg.appearance || {}).min_width || 120);
+        return Math.max(180, (this._app.cfg.appearance || {}).min_width || 260);
     }
 
     _applyRestingSize() {
+        // measure the content at natural size first so new chips widen the
+        // pill, then pin the box to the full inner width so the spacer can
+        // push the clock to the right edge
+        this._collapsedBox.set_width(-1);
         const [, natW] = this._collapsedBox.get_preferred_width(-1);
         const [, natH] = this._collapsedBox.get_preferred_height(natW);
-        this.set_size(Math.max(this._pillMinW(), natW + 2 * PAD_X), this._collapsedH);
+        const targetW = Math.max(this._pillMinW(), natW + 2 * PAD_X);
+        this.set_size(targetW, this._collapsedH);
+        this._collapsedBox.set_width(targetW - 2 * PAD_X);
         this._collapsedBox.set_position(PAD_X,
             Math.max(0, Math.round((this._collapsedH - natH) / 2)));
     }
@@ -586,15 +592,15 @@ class NotchBar extends PanelMenu.Button {
             chip.add_child(new St.Label({
                 text: `✦ ${pct}%`,
                 y_align: Clutter.ActorAlign.CENTER,
-                style: `${FONT}font-size: 12px; font-weight: 700; color: ${_usedColor(pct)};`,
+                style: `${FONT}font-size: 12.5px; font-weight: 700; color: ${_usedColor(pct)};`,
             }));
-            chip.add_child(this._miniBar(pct, _usedColor(pct), 36));
+            chip.add_child(this._miniBar(pct, _usedColor(pct), 44));
             if (worstAccount && worstAccount.reset_ms) {
                 const until = worstAccount.reset_ms;
                 const countdown = new St.Label({
                     text: `↻ ${app.fmtCountdown(until - Date.now())} @ ${_resetClockText(until)}`,
                     y_align: Clutter.ActorAlign.CENTER,
-                    style: `${FONT}font-size: 12px; font-weight: 700; color: ${T.text};`,
+                    style: `${FONT}font-size: 12.5px; font-weight: 700; color: ${T.text};`,
                 });
                 this._cdLabels.push({ label: countdown, until, clock: true });
                 chip.add_child(countdown);
@@ -644,7 +650,7 @@ class NotchBar extends PanelMenu.Button {
             const lbl = new St.Label({
                 text: app.focusClockText(),
                 y_align: Clutter.ActorAlign.CENTER,
-                style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${work ? T.accent : T.ok};`,
+                style: `${FONT}font-size: 12.5px; font-weight: 700; color: ${work ? T.accent : T.ok};`,
             });
             this._focusPillLbl = lbl;
             chips.add_child(lbl);
@@ -671,11 +677,12 @@ class NotchBar extends PanelMenu.Button {
         if (chips.get_children().length > 0)
             this._collapsedBox.add_child(chips);
 
-        /* clock */
+        /* clock, anchored to the right edge of the pill */
+        this._collapsedBox.add_child(new St.Widget({ x_expand: true }));
         this._clockLbl = new St.Label({
             text: app.clockText(),
             y_align: Clutter.ActorAlign.CENTER,
-            style: `${FONT}font-size: 12.5px; font-weight: 700; color: ${T.text}; margin-right: 2px;`,
+            style: `${FONT}font-size: 13.5px; font-weight: 700; color: ${T.text}; margin-right: 3px;`,
         });
         this._collapsedBox.add_child(this._clockLbl);
     }
@@ -738,18 +745,19 @@ class NotchBar extends PanelMenu.Button {
 
         const pageBox = new St.BoxLayout({
             vertical: true,
-            style: 'spacing: 4px;',
+            style: 'spacing: 5px; min-height: 96px;',
+            y_align: Clutter.ActorAlign.CENTER,
         });
         if (this._expanded && this._expandedBox.width > 0)
-            pageBox.set_width(Math.max(120, this._expandedBox.width - 76));
+            pageBox.set_width(Math.max(140, this._expandedBox.width - 84));
         pageBox.add_child(pages[this._islandPage].build());
 
         const dots = new St.BoxLayout({
-            style: 'spacing: 4px;',
+            style: 'spacing: 5px;',
             x_align: Clutter.ActorAlign.CENTER,
         });
         pages.forEach((_, i) => dots.add_child(new St.Widget({
-            style: `width: 5px; height: 5px; border-radius: 3px;` +
+            style: `width: 6px; height: 6px; border-radius: 3px;` +
                 `background-color: rgba(232, 234, 237, ${i === this._islandPage ? 0.9 : 0.22});`,
         })));
         pageBox.add_child(dots);
@@ -770,11 +778,11 @@ class NotchBar extends PanelMenu.Button {
         /* overview: date + one summary line per live module */
         pages.push({
             build: () => {
-                const box = new St.BoxLayout({ vertical: true, style: 'spacing: 4px;' });
+                const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
                 box.add_child(lbl(_nowLocal().format('%A, %B %e'),
-                    `font-size: 10.5px; font-weight: 700; color: ${T.muted};`));
+                    `font-size: 11px; font-weight: 700; color: ${T.muted};`));
                 const line = (icon, text, color) => box.add_child(lbl(
-                    `${icon}  ${text}`, `font-size: 11.5px; font-weight: 700; color: ${color};`));
+                    `${icon}  ${text}`, `font-size: 12.5px; font-weight: 700; color: ${color};`));
                 if (mods.media && st.media)
                     line(st.media.status === 'Playing' ? '▶' : '⏸',
                         _trunc(st.media.trackTitle || 'Untitled', 26), T.text);
@@ -802,17 +810,17 @@ class NotchBar extends PanelMenu.Button {
             const player = st.media;
             pages.push({
                 build: () => {
-                    const box = new St.BoxLayout({ vertical: true, style: 'spacing: 4px;' });
+                    const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
                     const playing = player.status === 'Playing';
-                    const title = _trunc(player.trackTitle || 'Untitled', 32);
-                    const artist = _trunc((player.trackArtists || []).join(', '), 24);
+                    const title = _trunc(player.trackTitle || 'Untitled', 34);
+                    const artist = _trunc((player.trackArtists || []).join(', '), 28);
                     box.add_child(lbl(`${playing ? '▶' : '⏸'}  ${title}`,
-                        `font-size: 12.5px; font-weight: 700; color: ${T.text};`));
+                        `font-size: 14px; font-weight: 700; color: ${T.text};`));
                     if (artist)
                         box.add_child(lbl(artist,
-                            `font-size: 11px; color: ${T.muted};`));
+                            `font-size: 11.5px; color: ${T.muted};`));
                     box.add_child(lbl('controls in the click menu',
-                        `font-size: 10px; color: ${T.muted};`));
+                        `font-size: 10.5px; color: ${T.muted};`));
                     return box;
                 },
             });
@@ -822,26 +830,26 @@ class NotchBar extends PanelMenu.Button {
             pages.push({
                 build: () => {
                     const f = st.focus;
-                    const box = new St.BoxLayout({ vertical: true, style: 'spacing: 4px;' });
+                    const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
                     const work = f.phase === 'work';
                     if (f.phase !== 'idle') {
                         const timer = lbl(
                             `${work ? '🎯 focus' : '☕ break'}  ${app.focusClockText()}`,
-                            `font-size: 13px; font-weight: 700; color: ${work ? T.accent : T.ok};`);
+                            `font-size: 15px; font-weight: 700; color: ${work ? T.accent : T.ok};`);
                         this._focusRowLbl = timer;
                         box.add_child(timer);
                         const frac = f.totalMs > 0
                             ? Math.max(0, Math.min(100, 100 * (1 - (f.endsAt - Date.now()) / f.totalMs)))
                             : 0;
                         const barRow = new St.BoxLayout({ spacing: 8 });
-                        barRow.add_child(this._miniBar(frac, work ? T.accent : T.ok, 140));
+                        barRow.add_child(this._miniBar(frac, work ? T.accent : T.ok, 180));
                         box.add_child(barRow);
                     } else {
                         box.add_child(lbl('🎯 Focus timer',
-                            `font-size: 12.5px; font-weight: 700; color: ${T.text};`));
+                            `font-size: 14px; font-weight: 700; color: ${T.text};`));
                         box.add_child(lbl(
                             `work ${app.cfg.focus.work_min}m · break ${app.cfg.focus.break_min}m — start from the menu`,
-                            `font-size: 10.5px; color: ${T.muted};`));
+                            `font-size: 11px; color: ${T.muted};`));
                     }
                     return box;
                 },
@@ -903,11 +911,11 @@ class NotchBar extends PanelMenu.Button {
             pages.push({
                 build: () => {
                     const b = st.battery;
-                    const box = new St.BoxLayout({ vertical: true, style: 'spacing: 4px;' });
+                    const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
                     box.add_child(lbl(`${b.charging ? '⚡ charging' : '🔋 battery'}  ${b.pct}%`,
-                        `font-size: 13px; font-weight: 700; color: ${T.text};`));
+                        `font-size: 14px; font-weight: 700; color: ${T.text};`));
                     box.add_child(this._miniBar(b.pct,
-                        b.charging ? T.ok : (b.pct <= 20 ? T.err : T.ok), 140));
+                        b.charging ? T.ok : (b.pct <= 20 ? T.err : T.ok), 180));
                     return box;
                 },
             });
@@ -919,12 +927,12 @@ class NotchBar extends PanelMenu.Button {
                     const w = st.water || { ml: 0 };
                     const goal = app.cfg.water_goal_ml;
                     const pct = Math.min(100, Math.round(100 * w.ml / goal));
-                    const box = new St.BoxLayout({ vertical: true, style: 'spacing: 4px;' });
+                    const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
                     box.add_child(lbl(`💧  ${w.ml} / ${goal} ml`,
-                        `font-size: 13px; font-weight: 700; color: ${T.text};`));
-                    box.add_child(this._miniBar(pct, T.accent, 140));
+                        `font-size: 14px; font-weight: 700; color: ${T.text};`));
+                    box.add_child(this._miniBar(pct, T.accent, 180));
                     box.add_child(lbl('+250 ml from the menu',
-                        `font-size: 10px; color: ${T.muted};`));
+                        `font-size: 10.5px; color: ${T.muted};`));
                     return box;
                 },
             });
@@ -940,6 +948,16 @@ class NotchBar extends PanelMenu.Button {
         this._islandPage = (this._islandPage + dir + pages.length) % pages.length;
         this._renderIsland();
         this._relayoutIsland();
+        // slide the new page in from the direction of the arrow
+        const row = this._expandedBox.get_first_child();
+        if (row) {
+            row.translation_x = dir * 22;
+            row.opacity = 60;
+            row.ease({
+                translation_x: 0, opacity: 255, duration: 200,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            });
+        }
     }
 
     // Re-ease the expanded island to the current page's size.
@@ -963,9 +981,9 @@ class NotchBar extends PanelMenu.Button {
     _pageBtn(glyph, onActivate) {
         const btn = new St.Button({
             label: glyph,
-            style: `${FONT}width: 24px; height: 26px; border-radius: 8px;` +
+            style: `${FONT}width: 28px; height: 34px; border-radius: 10px;` +
                 `background-color: rgba(255, 255, 255, 0.08);` +
-                `font-size: 11px; font-weight: 700; color: ${T.text};`,
+                `font-size: 13px; font-weight: 700; color: ${T.text};`,
             y_align: Clutter.ActorAlign.CENTER,
         });
         btn.connect('clicked', onActivate);
@@ -982,20 +1000,20 @@ class NotchBar extends PanelMenu.Button {
         });
         row.add_child(new St.Label({
             text: tag,
-            style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${tagColor}; min-width: 36px;`,
+            style: `${FONT}font-size: 12px; font-weight: 700; color: ${tagColor}; min-width: 44px;`,
             y_align: Clutter.ActorAlign.CENTER,
         }));
         row.add_child(new St.Widget({ x_expand: true }));
-        row.add_child(this._miniBar(val, color, 64));
+        row.add_child(this._miniBar(val, color, 96));
         row.add_child(new St.Label({
             text: `${Math.round(val)}%`,
-            style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${color}; min-width: 30px;`,
+            style: `${FONT}font-size: 12.5px; font-weight: 700; color: ${color}; min-width: 34px;`,
             y_align: Clutter.ActorAlign.CENTER,
         }));
         if (resetMs) {
             const cd = new St.Label({
                 text: `↻ ${this._app.fmtCountdown(resetMs - Date.now(), true)} @ ${_resetClockText(resetMs)}`,
-                style: `${FONT}font-size: 11px; font-weight: 700; color: ${T.text};`,
+                style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${T.text};`,
                 y_align: Clutter.ActorAlign.CENTER,
             });
             this._islandCd.push({ label: cd, until: resetMs, clock: true });
@@ -1180,8 +1198,8 @@ class NotchBar extends PanelMenu.Button {
         this.menu.addMenuItem(styleSub);
 
         const widthSub = new PopupMenu.PopupSubMenuMenuItem('↔  Pill width');
-        const curW = (app.cfg.appearance || {}).min_width || 120;
-        [['compact', 120], ['regular', 190], ['wide', 260]]
+        const curW = (app.cfg.appearance || {}).min_width || 260;
+        [['compact', 200], ['regular', 260], ['wide', 340]]
             .forEach(([label, px]) => {
                 const item = new PopupMenu.PopupMenuItem(
                     (curW === px ? '●  ' : '○  ') +

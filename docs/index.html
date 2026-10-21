@@ -127,7 +127,7 @@ h1{
   position:absolute;bottom:14px;left:0;right:0;text-align:center;
   font-size:12.5px;color:rgba(232,234,237,.42);z-index:2;
 }
-.demo-body{height:290px;position:relative}
+.demo-body{height:320px;position:relative}
 
 /* the notch itself — a faithful CSS replica of the extension */
 .notch{position:absolute;top:0;left:50%;transform:translateX(-50%);z-index:3}
@@ -136,56 +136,60 @@ h1{
   border:1px solid var(--pill-border);border-top-width:0;
   border-radius:0 0 22px 22px;
   box-shadow:0 10px 28px rgba(0,0,0,.55);
-  width:340px;height:30px;overflow:hidden;position:relative;
+  width:380px;height:32px;overflow:hidden;position:relative;
   transition:width .3s var(--spring),height .3s var(--spring),
     background .2s,border-color .2s,box-shadow .3s;
 }
 .notch:hover .notch-box,.notch.open .notch-box{
-  width:372px;height:212px;
+  width:470px;height:224px;
   background:var(--pill-hover);
   border-color:rgba(255,255,255,.18);
   box-shadow:0 14px 34px rgba(0,0,0,.6);
 }
 .pill-row{
-  position:absolute;inset:0 14px;display:flex;align-items:center;gap:9px;
+  position:absolute;inset:0 16px;display:flex;align-items:center;gap:10px;
   opacity:1;transition:opacity .12s var(--out);
-  font-size:11.5px;font-weight:700;white-space:nowrap;
+  font-size:12.5px;font-weight:700;white-space:nowrap;
 }
 .notch:hover .pill-row,.notch.open .pill-row{opacity:0}
+.pill-row .spacer{flex:1}
 .status-dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 7px var(--ok);flex:none}
 .pct{color:var(--ok)}
-.mini{width:36px;height:6px;border-radius:3px;background:rgba(255,255,255,.10);overflow:hidden;flex:none}
+.mini{width:44px;height:6px;border-radius:3px;background:rgba(255,255,255,.10);overflow:hidden;flex:none}
 .mini i{display:block;height:100%;background:var(--ok);border-radius:3px}
-.reset{font-weight:700;color:var(--text);font-size:12px}
-.count{color:var(--muted);font-weight:600;font-size:10px}
-.clock{margin-left:auto;color:var(--text);font-size:12.5px}
+.reset{font-weight:700;color:var(--text);font-size:12.5px}
+.count{color:var(--muted);font-weight:600;font-size:10.5px}
+.clock{color:var(--text);font-size:13.5px}
 
 .island{
-  position:absolute;left:14px;right:14px;top:9px;
+  position:absolute;left:16px;right:16px;top:10px;
   opacity:0;pointer-events:none;
   transition:opacity .26s var(--out) .1s;
   display:flex;flex-direction:column;gap:6px;
-  font-size:11.5px;
+  font-size:12.5px;
 }
 .notch:hover .island,.notch.open .island{opacity:1}
-.island .date{font-size:10.5px;font-weight:700;color:var(--muted)}
+.island .date{font-size:11px;font-weight:700;color:var(--muted)}
 /* island pager: ◀ ▶ flip between activities */
-.pager{display:flex;align-items:center;gap:8px}
+.pager{display:flex;align-items:center;gap:10px}
 .pgbtn{
-  font-family:var(--font);width:24px;height:26px;border-radius:8px;flex:none;
+  font-family:var(--font);width:28px;height:36px;border-radius:10px;flex:none;
   background:rgba(255,255,255,.08);border:none;color:var(--text);
-  font-size:11px;font-weight:700;cursor:pointer;
+  font-size:13px;font-weight:700;cursor:pointer;
   transition:background .15s;
 }
 .pgbtn:hover{background:rgba(255,255,255,.18)}
-.pages{display:flex;flex-direction:column;gap:5px;min-height:96px;justify-content:center}
-.pg{display:flex;flex-direction:column;gap:5px}
-.dots{display:flex;gap:4px;justify-content:center;margin-top:2px}
-.dots i{width:5px;height:5px;border-radius:3px;background:rgba(232,234,237,.22)}
+.pages{display:flex;flex-direction:column;gap:6px;min-height:110px;justify-content:center;flex:1}
+.pg{display:flex;flex-direction:column;gap:6px}
+.pg[hidden]{display:none}
+.pg.big{font-size:14px;font-weight:700}
+.dots{display:flex;gap:5px;justify-content:center;margin-top:2px}
+.dots i{width:6px;height:6px;border-radius:3px;background:rgba(232,234,237,.22)}
 .dots i.on{background:rgba(232,234,237,.9)}
-.irow{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.irow{display:flex;align-items:center;gap:8px;white-space:nowrap;font-size:12.5px}
+.irow.big{font-size:14px;font-weight:700}
 .irow .grow{flex:1}
-.irow .bar{width:64px;height:6px;border-radius:3px;background:rgba(255,255,255,.10);overflow:hidden;flex:none}
+.irow .bar{width:96px;height:6px;border-radius:3px;background:rgba(255,255,255,.10);overflow:hidden;flex:none}
 .irow .bar i{display:block;height:100%;border-radius:3px}
 .play{color:var(--text);font-weight:700}
 .track{color:var(--text);font-weight:700;overflow:hidden;text-overflow:ellipsis}
@@ -286,9 +290,9 @@ strong.c{font-weight:700}
 .notch-box[data-style="mist"]{--nb-bg:rgba(13,15,19,.62);--nb-hover:rgba(20,23,30,.86);--nb-border:rgba(255,255,255,.07);--nb-radius:0 0 26px 26px;--nb-shadow:0 8px 22px rgba(0,0,0,.4)}
 .notch-box{background:var(--nb-bg);border-color:var(--nb-border);border-radius:var(--nb-radius);box-shadow:var(--nb-shadow)}
 .notch:hover .notch-box,.notch.open .notch-box{background:var(--nb-hover)}
-.notch-box[data-width="compact"]{width:300px}
-.notch-box[data-width="wide"]{width:396px}
-.notch-box[data-width="wide"]:hover,.notch-box[data-width="wide"].open{width:396px}
+.notch-box[data-width="compact"]{width:320px}
+.notch-box[data-width="wide"]{width:520px}
+.notch-box[data-width="wide"]:hover,.notch-box[data-width="wide"].open{width:520px}
 
 /* faq */
 .faq{max-width:720px;margin:40px auto 0;display:flex;flex-direction:column;gap:10px}
@@ -358,6 +362,7 @@ footer a:hover{color:var(--text)}
               <span class="mini"><i style="width:72%"></i></span>
               <span class="reset" data-reset>↻ 2h 31m</span>
               <span class="count">×2</span>
+              <span class="spacer"></span>
               <span class="clock" data-clock>—</span>
             </div>
             <div class="island">
@@ -372,7 +377,7 @@ footer a:hover{color:var(--text)}
                   </div>
                   <div class="pg" hidden>
                     <div class="date">Now playing</div>
-                    <div class="irow"><span class="play">▶</span><span class="track">Middleware — Overmono</span></div>
+                    <div class="irow big"><span class="play">▶</span><span class="track">Middleware — Overmono</span></div>
                     <div class="sub" style="margin-top:2px">controls in the click menu</div>
                   </div>
                   <div class="pg" hidden>
@@ -392,8 +397,8 @@ footer a:hover{color:var(--text)}
                   </div>
                   <div class="pg" hidden>
                     <div class="date">Battery &amp; water</div>
-                    <div class="irow"><span>🔋 87%</span><span class="bar"><i style="width:87%;background:var(--ok)"></i></span></div>
-                    <div class="irow"><span>💧 1250 / 2000 ml</span><span class="bar" style="width:52px"><i style="width:62%;background:var(--accent)"></i></span></div>
+                    <div class="irow big"><span>🔋 87%</span><span class="bar" style="width:120px"><i style="width:87%;background:var(--ok)"></i></span></div>
+                    <div class="irow big"><span>💧 1250 / 2000 ml</span><span class="bar" style="width:120px"><i style="width:62%;background:var(--accent)"></i></span></div>
                   </div>
                   <div class="dots" id="pgDots"></div>
                 </div>
