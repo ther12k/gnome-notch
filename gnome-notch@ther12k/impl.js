@@ -316,6 +316,7 @@ class NotchBar extends PanelMenu.Button {
         this._cdLabels = [];        // live countdown labels [{label, ms}]
         this._islandCd = [];        // island-page countdown labels
         this._islandPage = 0;       // which island activity page is shown
+        this._islandKind = null;    // its kind ('overview', 'media', …)
         this._eyes = [];            // eye actors (blink loop pokes them)
         this._blinkTimer = 0;
         this._glanceTimer = 0;
@@ -605,12 +606,69 @@ class NotchBar extends PanelMenu.Button {
         this._alert = aiWarn || batteryLow;
         this._applyPillStyle();
 
-        // Keep the resting pill to one account summary and the clock; detailed
-        // per-account quotas and reset times belong in the hover island.
-        const aiMode = app.cfg.pill_mode !== 'clock' &&
+        // The pill mirrors the island's selected activity; when the selected
+        // page has nothing to show, fall back to the overview (AI summary or
+        // the calm eyes).
+        let mode = this._islandKind || 'overview';
+        if ((mode === 'media' && (!mods.media || !st.media)) ||
+            (mode === 'focus' && (!mods.focus || !focusRunning)) ||
+            (mode === 'battery' && (!mods.battery || !st.battery)) ||
+            (mode === 'ghome' && (!mods.ghome || !st.ghome)) ||
+            (mode === 'water' && !mods.water) ||
+            (mode === 'ai' && !(mods.ai && aiAccounts.length)))
+            mode = 'overview';
+
+        const aiMode = (mode === 'overview' || mode === 'ai') &&
+            app.cfg.pill_mode !== 'clock' &&
             mods.ai && aiAccounts.length > 0;
 
-        if (aiMode) {
+        if (mode === 'media') {
+            this._collapsedBox.add_child(new St.Widget({
+                style: `width: 7px; height: 7px; border-radius: 4px;` +
+                    `background-color: ${mediaPlaying ? T.ok : T.muted};` +
+                    `box-shadow: 0 0 7px ${mediaPlaying ? T.ok : T.muted}; margin-left: 2px;`,
+                y_align: Clutter.ActorAlign.CENTER,
+            }));
+            this._collapsedBox.add_child(new St.Label({
+                text: `${mediaPlaying ? '▶' : '⏸'}  ${_trunc(st.media.trackTitle || 'Untitled', 22)}`,
+                y_align: Clutter.ActorAlign.CENTER,
+                style: `${FONT}font-size: 12.5px; font-weight: 700; color: ${T.text};`,
+            }));
+        } else if (mode === 'focus') {
+            const work = st.focus.phase === 'work';
+            this._collapsedBox.add_child(new St.Label({
+                text: work ? '🎯' : '☕',
+                y_align: Clutter.ActorAlign.CENTER,
+                style: 'font-size: 12px;',
+            }));
+            const lbl = new St.Label({
+                text: app.focusClockText(),
+                y_align: Clutter.ActorAlign.CENTER,
+                style: `${FONT}font-size: 13px; font-weight: 700; color: ${work ? T.accent : T.ok};`,
+            });
+            this._focusPillLbl = lbl;
+            this._collapsedBox.add_child(lbl);
+        } else if (mode === 'ghome') {
+            const s = st.ghome.summary || {};
+            this._collapsedBox.add_child(new St.Label({
+                text: s.has_active ? `🏠  ${s.active_count} on` : '🏠  all off',
+                y_align: Clutter.ActorAlign.CENTER,
+                style: `${FONT}font-size: 12.5px; font-weight: 700; color: ${s.has_active ? T.ok : T.muted};`,
+            }));
+        } else if (mode === 'battery') {
+            this._collapsedBox.add_child(new St.Label({
+                text: `${batteryCharging ? '⚡' : '🔋'}  ${st.battery.pct}%`,
+                y_align: Clutter.ActorAlign.CENTER,
+                style: `${FONT}font-size: 12.5px; font-weight: 700; color: ${batteryLow ? T.warn : T.ok};`,
+            }));
+        } else if (mode === 'water') {
+            const w = st.water || { ml: 0 };
+            this._collapsedBox.add_child(new St.Label({
+                text: `💧  ${w.ml} / ${app.cfg.water_goal_ml} ml`,
+                y_align: Clutter.ActorAlign.CENTER,
+                style: `${FONT}font-size: 12.5px; font-weight: 700; color: ${T.accent};`,
+            }));
+        } else if (aiMode) {
             const th = app.cfg.ai;
             const dotColor = worst >= th.exhaust_pct ? T.err
                 : (aiWarn ? T.warn : T.ok);
@@ -671,20 +729,20 @@ class NotchBar extends PanelMenu.Button {
             }
         }
 
-        /* transient chips shared by both modes */
+        /* transient chips for whatever the main area didn't cover */
         const chips = new St.BoxLayout({
             style: 'spacing: 8px;',
             y_align: Clutter.ActorAlign.CENTER,
         });
 
-        if (!aiMode && mods.media && mediaPlaying)
+        if (mode === 'overview' && !aiMode && mods.media && mediaPlaying)
             chips.add_child(new St.Label({
                 text: '▶',
                 y_align: Clutter.ActorAlign.CENTER,
                 style: `${FONT}font-size: 11px; color: ${T.ok};`,
             }));
 
-        if (mods.focus && focusRunning) {
+        if (mode !== 'focus' && mods.focus && focusRunning) {
             const work = st.focus.phase === 'work';
             const lbl = new St.Label({
                 text: app.focusClockText(),
@@ -693,11 +751,12 @@ class NotchBar extends PanelMenu.Button {
             });
             this._focusPillLbl = lbl;
             chips.add_child(lbl);
-        } else {
+        } else if (mode !== 'focus') {
             this._focusPillLbl = null;
         }
 
-        if (!aiMode && mods.ai && aiAccounts.length) {
+        if ((mode === 'overview' || mode === 'media') && !aiMode && mods.ai &&
+            aiAccounts.length) {
             chips.add_child(new St.Label({
                 text: `✦ ${Math.round(worst)}%`,
                 y_align: Clutter.ActorAlign.CENTER,
@@ -705,7 +764,8 @@ class NotchBar extends PanelMenu.Button {
             }));
         }
 
-        if (!aiMode && mods.battery && st.battery && (batteryCharging || batteryLow)) {
+        if (mode !== 'battery' && !aiMode && mods.battery && st.battery &&
+            (batteryCharging || batteryLow)) {
             chips.add_child(new St.Label({
                 text: `${batteryCharging ? '⚡' : '🔋'} ${st.battery.pct}%`,
                 y_align: Clutter.ActorAlign.CENTER,
@@ -713,8 +773,8 @@ class NotchBar extends PanelMenu.Button {
             }));
         }
 
-        if (!aiMode && mods.ghome && st.ghome && st.ghome.summary &&
-            st.ghome.summary.has_active)
+        if (mode !== 'ghome' && !aiMode && mods.ghome && st.ghome &&
+            st.ghome.summary && st.ghome.summary.has_active)
             chips.add_child(new St.Label({
                 text: `🏠 ${st.ghome.summary.active_count}`,
                 y_align: Clutter.ActorAlign.CENTER,
@@ -776,8 +836,13 @@ class NotchBar extends PanelMenu.Button {
             }));
             return;
         }
-        if (this._islandPage >= pages.length)
-            this._islandPage = 0;
+        // keep the selected activity stable across page-list changes (a
+        // player quitting shifts indices; the kind survives)
+        let idx = pages.findIndex(p => p.kind === this._islandKind);
+        if (idx < 0)
+            idx = Math.min(this._islandPage, pages.length - 1);
+        this._islandPage = idx;
+        this._islandKind = pages[idx].kind;
 
         if (pages.length === 1) {
             this._expandedBox.add_child(pages[this._islandPage].build());
@@ -825,6 +890,7 @@ class NotchBar extends PanelMenu.Button {
 
         /* overview: date + one summary line per live module */
         pages.push({
+            kind: 'overview',
             build: () => {
                 const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
                 box.add_child(lbl(_nowLocal().format('%A, %B %e'),
@@ -857,6 +923,7 @@ class NotchBar extends PanelMenu.Button {
         if (mods.media && st.media) {
             const player = st.media;
             pages.push({
+                kind: 'media',
                 build: () => {
                     const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
                     const playing = player.status === 'Playing';
@@ -876,6 +943,7 @@ class NotchBar extends PanelMenu.Button {
 
         if (mods.focus) {
             pages.push({
+                kind: 'focus',
                 build: () => {
                     const f = st.focus;
                     const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
@@ -915,6 +983,7 @@ class NotchBar extends PanelMenu.Button {
                 : (glm.enabled ? [{ name: 'main', status: glm.status, token_quota: glm.token_quota }] : []);
             if (summaryAccs.length || glmAccounts.length || (data.summary || {}).panel_group) {
                 pages.push({
+                    kind: 'ai',
                     build: () => {
                         const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
                         const bGlm = ((data.theme || {}).badge_icons &&
@@ -971,6 +1040,7 @@ class NotchBar extends PanelMenu.Button {
 
         if (mods.battery && st.battery) {
             pages.push({
+                kind: 'battery',
                 build: () => {
                     const b = st.battery;
                     const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
@@ -986,6 +1056,7 @@ class NotchBar extends PanelMenu.Button {
         if (mods.ghome && st.ghome && (st.ghome.devices || []).length) {
             const g = st.ghome;
             pages.push({
+                kind: 'ghome',
                 build: () => {
                     const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
                     const s = g.summary || {};
@@ -1021,6 +1092,7 @@ class NotchBar extends PanelMenu.Button {
 
         if (mods.water) {
             pages.push({
+                kind: 'water',
                 build: () => {
                     const w = st.water || { ml: 0 };
                     const goal = app.cfg.water_goal_ml;
@@ -1046,6 +1118,8 @@ class NotchBar extends PanelMenu.Button {
         this._islandPage = (this._islandPage + dir + pages.length) % pages.length;
         this._renderIsland();
         this._relayoutIsland();
+        // the pill mirrors the selected activity — refresh it too
+        this._renderCollapsed();
         // slide the new page in from the direction of the arrow
         const row = this._expandedBox.get_first_child();
         if (row) {
