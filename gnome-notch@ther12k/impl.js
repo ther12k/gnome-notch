@@ -865,15 +865,27 @@ class NotchBar extends PanelMenu.Button {
             pageBox.set_width(Math.max(140, this._expandedBox.width - 84));
         pageBox.add_child(pages[this._islandPage].build());
 
-        const dots = new St.BoxLayout({
+        // quick page chooser between the arrows: one icon per activity
+        const pick = new St.BoxLayout({
             style: 'spacing: 5px;',
             x_align: Clutter.ActorAlign.CENTER,
         });
-        pages.forEach((_, i) => dots.add_child(new St.Widget({
-            style: `width: 6px; height: 6px; border-radius: 3px;` +
-                `background-color: rgba(232, 234, 237, ${i === this._islandPage ? 0.9 : 0.22});`,
-        })));
-        pageBox.add_child(dots);
+        pages.forEach((p, i) => {
+            const active = i === this._islandPage;
+            const btn = new St.Button({
+                label: p.icon,
+                style: `${FONT}width: 24px; height: 22px; border-radius: 8px;` +
+                    (active
+                        ? 'background-color: rgba(255, 255, 255, 0.17);' +
+                          'border: 1px solid rgba(255, 255, 255, 0.15);'
+                        : 'background-color: rgba(255, 255, 255, 0.05);') +
+                    `font-size: 11px; color: ${active ? T.text : 'rgba(232, 234, 237, 0.55)'};`,
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            btn.connect('clicked', () => this._gotoIslandPage(i));
+            pick.add_child(btn);
+        });
+        pageBox.add_child(pick);
 
         row.add_child(pageBox);
         row.add_child(this._pageBtn('▶', () => this._turnIslandPage(1)));
@@ -890,7 +902,7 @@ class NotchBar extends PanelMenu.Button {
 
         /* overview: date + one summary line per live module */
         pages.push({
-            kind: 'overview',
+            kind: 'overview', icon: '🗓',
             build: () => {
                 const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
                 box.add_child(lbl(_nowLocal().format('%A, %B %e'),
@@ -923,7 +935,7 @@ class NotchBar extends PanelMenu.Button {
         if (mods.media && st.media) {
             const player = st.media;
             pages.push({
-                kind: 'media',
+                kind: 'media', icon: '🎵',
                 build: () => {
                     const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
                     const playing = player.status === 'Playing';
@@ -943,7 +955,7 @@ class NotchBar extends PanelMenu.Button {
 
         if (mods.focus) {
             pages.push({
-                kind: 'focus',
+                kind: 'focus', icon: '🎯',
                 build: () => {
                     const f = st.focus;
                     const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
@@ -983,7 +995,7 @@ class NotchBar extends PanelMenu.Button {
                 : (glm.enabled ? [{ name: 'main', status: glm.status, token_quota: glm.token_quota }] : []);
             if (summaryAccs.length || glmAccounts.length || (data.summary || {}).panel_group) {
                 pages.push({
-                    kind: 'ai',
+                    kind: 'ai', icon: '✦',
                     build: () => {
                         const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
                         const bGlm = ((data.theme || {}).badge_icons &&
@@ -1040,7 +1052,7 @@ class NotchBar extends PanelMenu.Button {
 
         if (mods.battery && st.battery) {
             pages.push({
-                kind: 'battery',
+                kind: 'battery', icon: '🔋',
                 build: () => {
                     const b = st.battery;
                     const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
@@ -1056,7 +1068,7 @@ class NotchBar extends PanelMenu.Button {
         if (mods.ghome && st.ghome && (st.ghome.devices || []).length) {
             const g = st.ghome;
             pages.push({
-                kind: 'ghome',
+                kind: 'ghome', icon: '🏠',
                 build: () => {
                     const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
                     const s = g.summary || {};
@@ -1092,7 +1104,7 @@ class NotchBar extends PanelMenu.Button {
 
         if (mods.water) {
             pages.push({
-                kind: 'water',
+                kind: 'water', icon: '💧',
                 build: () => {
                     const w = st.water || { ml: 0 };
                     const goal = app.cfg.water_goal_ml;
@@ -1111,18 +1123,17 @@ class NotchBar extends PanelMenu.Button {
         return pages;
     }
 
-    _turnIslandPage(dir) {
+    _showIslandPage(idx, dir) {
         const pages = this._islandPages();
-        if (pages.length < 2)
+        if (pages.length < 2 || idx === this._islandPage)
             return;
-        const next = (this._islandPage + dir + pages.length) % pages.length;
-        this._islandPage = next;
-        this._islandKind = pages[next].kind;   // keep this page through re-render
+        this._islandPage = idx;
+        this._islandKind = pages[idx].kind;   // keep this page through re-render
         this._renderIsland();
         this._relayoutIsland();
         // the pill mirrors the selected activity — refresh it too
         this._renderCollapsed();
-        // slide the new page in from the direction of the arrow
+        // slide the new page in from the direction of travel
         const row = this._expandedBox.get_first_child();
         if (row) {
             row.translation_x = dir * 22;
@@ -1132,6 +1143,17 @@ class NotchBar extends PanelMenu.Button {
                 mode: Clutter.AnimationMode.EASE_OUT_QUAD,
             });
         }
+    }
+
+    _turnIslandPage(dir) {
+        const pages = this._islandPages();
+        if (pages.length < 2)
+            return;
+        this._showIslandPage((this._islandPage + dir + pages.length) % pages.length, dir);
+    }
+
+    _gotoIslandPage(idx) {
+        this._showIslandPage(idx, idx > this._islandPage ? 1 : -1);
     }
 
     // Re-ease the expanded island to the current page's size.
