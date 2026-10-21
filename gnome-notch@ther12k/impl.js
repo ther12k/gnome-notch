@@ -107,6 +107,17 @@ const T = {
 
 const ACCOUNT_COLORS = ['#7ab8ff', '#b59aff', '#3fd68f', '#f5b455', '#ff9ecb', '#6fd9e8'];
 
+// per-activity accent used by the island's page-icon chooser
+const PAGE_HUES = {
+    overview: '#7ab8ff',
+    media: '#3fd68f',
+    focus: '#b59aff',
+    ai: '#f5b455',
+    ghome: '#6fd9e8',
+    battery: '#3fd68f',
+    water: '#7ab8ff',
+};
+
 const CONFIG_DIR = GLib.build_filenamev([GLib.get_home_dir(), '.config', 'gnome-notch']);
 const CONFIG_PATH = GLib.build_filenamev([CONFIG_DIR, 'config.json']);
 
@@ -189,6 +200,15 @@ function _ghomeIcon(type) {
         case 'thermostat': return '🌡️';
         default: return '🏠';
     }
+}
+
+// '#7ab8ff' → 'rgba(122,184,255,0.3)' for glow tints
+function _hexA(hex, a) {
+    const h = String(hex).replace('#', '');
+    const r = parseInt(h.slice(0, 2), 16);
+    const g = parseInt(h.slice(2, 4), 16);
+    const b = parseInt(h.slice(4, 6), 16);
+    return `rgba(${r},${g},${b},${a})`;
 }
 
 // Accounts to surface everywhere (pill + island). summary.panel_accounts is
@@ -865,23 +885,43 @@ class NotchBar extends PanelMenu.Button {
             pageBox.set_width(Math.max(140, this._expandedBox.width - 84));
         pageBox.add_child(pages[this._islandPage].build());
 
-        // quick page chooser between the arrows: one icon per activity
+        // quick page chooser between the arrows: one icon per activity,
+        // active page lit in its own accent color
         const pick = new St.BoxLayout({
-            style: 'spacing: 5px;',
+            style: 'spacing: 6px;',
             x_align: Clutter.ActorAlign.CENTER,
         });
         pages.forEach((p, i) => {
             const active = i === this._islandPage;
+            const hue = PAGE_HUES[p.kind] || T.accent;
+            const styleFor = (state) => {
+                const head = `${FONT}width: 31px; height: 31px; border-radius: 10px;` +
+                    `font-size: 14.5px; font-weight: 700;`;
+                if (state === 'active')
+                    return head +
+                        `background-color: ${_hexA(hue, 0.20)};` +
+                        `border: 1px solid ${_hexA(hue, 0.60)};` +
+                        `box-shadow: 0 0 10px ${_hexA(hue, 0.35)};` +
+                        `color: ${hue};`;
+                if (state === 'hover')
+                    return head +
+                        'background-color: rgba(255, 255, 255, 0.13);' +
+                        'border: 1px solid rgba(255, 255, 255, 0.12);' +
+                        `color: ${T.text};`;
+                return head +
+                    'background-color: rgba(255, 255, 255, 0.05);' +
+                    'border: 1px solid rgba(255, 255, 255, 0.04);' +
+                    'color: rgba(232, 234, 237, 0.60);';
+            };
             const btn = new St.Button({
                 label: p.icon,
-                style: `${FONT}width: 24px; height: 22px; border-radius: 8px;` +
-                    (active
-                        ? 'background-color: rgba(255, 255, 255, 0.17);' +
-                          'border: 1px solid rgba(255, 255, 255, 0.15);'
-                        : 'background-color: rgba(255, 255, 255, 0.05);') +
-                    `font-size: 11px; color: ${active ? T.text : 'rgba(232, 234, 237, 0.55)'};`,
+                style: styleFor(active ? 'active' : 'idle'),
                 y_align: Clutter.ActorAlign.CENTER,
             });
+            if (!active) {
+                btn.connect('enter-event', () => btn.set_style(styleFor('hover')));
+                btn.connect('leave-event', () => btn.set_style(styleFor('idle')));
+            }
             btn.connect('clicked', () => this._gotoIslandPage(i));
             pick.add_child(btn);
         });
