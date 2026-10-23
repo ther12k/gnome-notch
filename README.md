@@ -24,18 +24,19 @@ Windows. The AI-quota module spun out of my internal AI usage monitor
 | **Media** (MPRIS) | play indicator while playing | artwork, track and artist | previous / play-pause / next |
 | **Focus timer** | countdown while active | countdown + progress | start work / break, or stop |
 | **Battery** | warning/charging indicator when relevant | percentage + bar | — |
-| **AI quota** | highest-used account label, percentage + compact bar; account count when there are several | up to three account rows with reset countdowns | — |
+| **AI quota** | one chip per account: label, percentage bar and reset countdown (up to three) | up to three account rows with reset countdowns | — |
 | **Google Home** (off by default) | 🏠 N-on chip while devices are active | device states per room | toggle each device · all off |
 | **Hydration** (off by default) | — | progress | +250 ml |
 | **Idle eyes** | blink and glance when everything is calm | — | — |
 
-Hover opens a compact island capped at 380px wide. ◀ ▶ and the labeled icon
-chooser move between Overview, Media, Focus, AI, Battery, Google Home, Hydration
-and Quick settings. Status pages are read-only; the dedicated **⚙ Quick settings**
-page provides small module, style and width toggles. Track controls, focus start/stop,
-hydration logging, and device actions are in the click menu. The resting AI pill
-stays glanceable even with multiple accounts; the AI page keeps per-account bars
-and live reset countdowns. Click the pill for actions and the full settings menu:
+Hover opens a compact island capped at 500px wide (narrower on small
+monitors). ◀ ▶ and the labeled icon chooser move between Overview, Media,
+Focus, AI, Battery, Google Home, Hydration and Quick settings. Status pages
+are read-only; the dedicated **⚙ Quick settings** page provides small module,
+style and width toggles. Track controls, focus start/stop, hydration logging,
+and device actions are in the click menu. The resting pill shows each AI
+account's chip with its own bar and reset countdown; the AI page repeats them
+with fuller detail. Click the pill for actions and the full settings menu:
 toggle **🧩 Modules**, pick a **🎨 Pill style** — glass droplet (glow border,
 default), flat pill, outline or mist — choose **↔ Pill width** (compact / regular /
 wide), or switch **AI chips in pill** on/off. Settings live in

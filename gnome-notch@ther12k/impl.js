@@ -22,7 +22,7 @@ import { MprisPlayer } from 'resource:///org/gnome/shell/ui/mpris.js';
 
 /* ---------- constants ---------- */
 
-const ISLAND_MAX_W = 380;
+const ISLAND_MAX_W = 500;
 const PAD_X = 16;
 const PAD_TOP = 10;
 const PAD_BOTTOM = 12;
@@ -542,9 +542,8 @@ class NotchBar extends PanelMenu.Button {
         // content-sized height — slim rows, not a dashboard.
         this._expandedBox.set_width(-1);
         const [, natW] = this._expandedBox.get_preferred_width(-1);
-        const maxW = this._maxIslandWidth();
-        const targetW = Math.max(Math.min(this._pillMinW(), maxW),
-            Math.min(natW + 2 * PAD_X, maxW));
+        const targetW = Math.max(this.width,
+            Math.min(natW + 2 * PAD_X, this._maxIslandWidth()));
         const innerW = targetW - 2 * PAD_X;
         this._expandedBox.set_width(innerW);
         // rebuild the pager now that the island has its real width, so the
@@ -724,26 +723,41 @@ class NotchBar extends PanelMenu.Button {
                 y_align: Clutter.ActorAlign.CENTER,
             }));
 
-            const summary = new St.BoxLayout({
-                y_align: Clutter.ActorAlign.CENTER,
-                style: 'spacing: 6px;',
-            });
-            const leadAccount = aiAccounts.reduce((best, a) =>
-                !best || (a.used_pct || 0) > (best.used_pct || 0) ? a : best, null);
-            summary.add_child(new St.Label({
-                text: `✦${leadAccount && leadAccount.short
-                    ? `${String(leadAccount.short).slice(0, 5)} ` : ' '}${Math.round(worst)}%`,
-                y_align: Clutter.ActorAlign.CENTER,
-                style: `${FONT}font-size: 12.5px; font-weight: 700; color: ${_usedColor(worst)};`,
-            }));
-            summary.add_child(this._miniBar(worst, _usedColor(worst), 52));
-            if (aiAccounts.length > 1)
-                summary.add_child(new St.Label({
-                    text: `×${aiAccounts.length}`,
+            // aiacctool-style: one chip per account (label + bar + reset),
+            // so both bars show by default
+            aiAccounts.slice(0, 3).forEach((a, i) => {
+                const pct = Math.round(a.used_pct);
+                const exhausted = a.used_pct >= th.exhaust_pct;
+                const color = exhausted ? T.err
+                    : ACCOUNT_COLORS[i % ACCOUNT_COLORS.length];
+                const chip = new St.BoxLayout({
                     y_align: Clutter.ActorAlign.CENTER,
-                    style: `${FONT}font-size: 10.5px; font-weight: 700; color: ${T.muted};`,
+                    style: 'spacing: 6px;',
+                });
+                const tag = a.short ? `${String(a.short).slice(0, 7)} ` : '';
+                chip.add_child(new St.Label({
+                    text: `✦${tag}${pct}%`,
+                    y_align: Clutter.ActorAlign.CENTER,
+                    style: `${FONT}font-size: 12.5px; font-weight: 700; color: ${color};`,
                 }));
-            this._collapsedBox.add_child(summary);
+                chip.add_child(this._miniBar(pct, _usedColor(pct), 40));
+                if (a.reset_ms) {
+                    const cd = new St.Label({
+                        text: `↻ ${app.fmtCountdown(a.reset_ms - Date.now(), true)}`,
+                        y_align: Clutter.ActorAlign.CENTER,
+                        style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${T.text};`,
+                    });
+                    this._cdLabels.push({ label: cd, until: a.reset_ms, clock: false });
+                    chip.add_child(cd);
+                }
+                this._collapsedBox.add_child(chip);
+            });
+            if (aiAccounts.length > 3)
+                this._collapsedBox.add_child(new St.Label({
+                    text: `+${aiAccounts.length - 3}`,
+                    y_align: Clutter.ActorAlign.CENTER,
+                    style: `${FONT}font-size: 10px; color: ${T.muted};`,
+                }));
         } else {
             /* clock-first pill: eyes when calm, else a status dot */
             if (this._alert) {
@@ -979,8 +993,10 @@ class NotchBar extends PanelMenu.Button {
                 if (mods.ai && st.ai) {
                     const acc = _panelAccounts(st.ai);
                     const worst = acc.reduce((m, a) => Math.max(m, a.used_pct || 0), 0);
+                    const reset = acc.length ? app.fmtCountdown(
+                        (acc.find(a => a.used_pct === worst) || {}).reset_ms - Date.now(), true) : '';
                     if (acc.length)
-                        line('✦', `${Math.round(worst)}% across ${acc.length} account${acc.length === 1 ? '' : 's'}`,
+                        line('✦', `${Math.round(worst)}%${reset ? `  ↻ ${reset}` : ''}`,
                             _usedColor(worst));
                 }
                 if (mods.battery && st.battery)
@@ -1363,9 +1379,8 @@ class NotchBar extends PanelMenu.Button {
         this._expandedBox.set_width(-1);
         this._renderIsland();
         const [, natW] = this._expandedBox.get_preferred_width(-1);
-        const maxW = this._maxIslandWidth();
-        const targetW = Math.max(Math.min(this._pillMinW(), maxW),
-            Math.min(natW + 2 * PAD_X, maxW));
+        const targetW = Math.max(this.width,
+            Math.min(natW + 2 * PAD_X, this._maxIslandWidth()));
         const innerW = targetW - 2 * PAD_X;
         this._expandedBox.set_width(innerW);
         this._renderIsland();

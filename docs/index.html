@@ -136,12 +136,12 @@ h1{
   border:1px solid var(--pill-border);border-top-width:0;
   border-radius:0 0 22px 22px;
   box-shadow:0 10px 28px rgba(0,0,0,.55);
-  width:380px;height:32px;overflow:hidden;position:relative;
+  width:470px;height:32px;overflow:hidden;position:relative;
   transition:width .3s var(--spring),height .3s var(--spring),
     background .2s,border-color .2s,box-shadow .3s;
 }
 .notch:hover .notch-box,.notch.open .notch-box{
-  width:min(380px,calc(100vw - 24px));height:172px;
+  width:min(470px,calc(100vw - 24px));height:190px;
   background:var(--pill-hover);
   border-color:rgba(255,255,255,.18);
   box-shadow:0 14px 34px rgba(0,0,0,.6);
@@ -375,10 +375,13 @@ footer a:hover{color:var(--text)}
         <div class="notch" id="notch">
           <div class="notch-box">
             <div class="pill-row">
-  <span class="status-dot"></span>
-  <span class="pct" style="color:var(--warn)">✦coding 72%</span>
-  <span class="mini"><i style="width:72%;background:var(--warn)"></i></span>
-  <span class="count">×2</span>
+              <span class="status-dot"></span>
+              <span class="pct" style="color:var(--warn)">✦coding 72%</span>
+              <span class="mini"><i style="width:72%;background:var(--warn)"></i></span>
+              <span class="reset" data-reset>↻ 2h 31m</span>
+              <span class="pct">✦plus2 54%</span>
+              <span class="mini"><i style="width:54%"></i></span>
+              <span class="reset" style="color:var(--muted)">↻ 5h 12m</span>
               <span class="spacer"></span>
               <span class="clock" data-clock>—</span>
             </div>
@@ -390,7 +393,7 @@ footer a:hover{color:var(--text)}
                     <div class="date" data-date>Tuesday, October 21</div>
                     <div class="irow"><span style="color:var(--text);font-weight:700">▶  Middleware</span></div>
                     <div class="irow"><span style="color:var(--accent);font-weight:700">🎯 24:59</span><span class="sub">focus</span></div>
-                    <div class="irow"><strong style="color:var(--warn)">✦coding 72%</strong><span class="bar"><i style="width:72%;background:var(--warn)"></i></span><span class="count">×2</span></div>
+                    <div class="irow"><strong style="color:var(--warn)">✦ 72%</strong><span class="reset" data-reset>↻ 2h 31m</span></div>
                   </div>
                   <div class="pg" data-kind="media" hidden>
                     <div class="media-preview">
@@ -477,7 +480,7 @@ footer a:hover{color:var(--text)}
           <div class="srow"><strong class="c" style="color:var(--ok)">✦plus2 54%</strong><span class="bar"><i style="width:54%;background:var(--ok)"></i></span><span class="dim">↻ 5h 12m</span></div>
         </div>
         <h3>✦ AI quotas, at a glance</h3>
-        <p>The resting pill stays compact with the highest-used account summary; the AI page shows each account's bar and live reset countdown — time left <em>and</em> the exact reset time. The pill glows amber before you hit the limit.</p>
+        <p>One chip per account in the pill and on the AI page — bar plus live reset countdown, time left <em>and</em> the exact reset time. The pill glows amber before you hit the limit.</p>
       </div>
       <div class="tile">
         <div class="stage">
@@ -524,22 +527,22 @@ footer a:hover{color:var(--text)}
     <p class="lede">Four presets and three widths — click any card to restyle the notch at the top of this page, then set it for real from the click menu (🎨 Pill style · ↔ Pill width).</p>
     <div class="styles">
       <div class="stylecard" data-style-btn="glass" role="button" tabindex="0">
-        <div class="droplet"><span class="status-dot"></span><span class="pct">✦coding 72%</span><span class="mini"><i style="width:72%"></i></span><span class="count">×2</span></div>
+        <div class="droplet"><span class="status-dot"></span><span class="pct">✦ 72%</span><span class="mini"><i style="width:72%"></i></span><span class="reset" data-reset>↻ 2h 31m</span></div>
         <div class="name">Glass droplet <span class="dim" style="font-weight:400">· default</span></div>
         <div class="desc">Flat top, rounded bottom, soft edge glow and a deep drop shadow — the macOS look.</div>
       </div>
       <div class="stylecard" data-style-btn="flat" role="button" tabindex="0">
-        <div class="flatpill"><span class="status-dot"></span><span class="pct">✦coding 72%</span><span class="mini"><i style="width:72%"></i></span><span class="count">×2</span></div>
+        <div class="flatpill"><span class="status-dot"></span><span class="pct">✦ 72%</span><span class="mini"><i style="width:72%"></i></span><span class="reset" data-reset>↻ 2h 31m</span></div>
         <div class="name">Flat pill</div>
         <div class="desc">A quiet, fully rounded pill for darker, minimal setups.</div>
       </div>
       <div class="stylecard" data-style-btn="outline" role="button" tabindex="0">
-        <div class="droplet" style="background:rgba(10,12,16,.45);border-color:rgba(255,255,255,.26);border-radius:0 0 20px 20px;box-shadow:0 6px 18px rgba(0,0,0,.35)"><span class="status-dot"></span><span class="pct">✦coding 72%</span><span class="mini"><i style="width:72%"></i></span><span class="count">×2</span></div>
+        <div class="droplet" style="background:rgba(10,12,16,.45);border-color:rgba(255,255,255,.26);border-radius:0 0 20px 20px;box-shadow:0 6px 18px rgba(0,0,0,.35)"><span class="status-dot"></span><span class="pct">✦ 72%</span><span class="mini"><i style="width:72%"></i></span><span class="reset" data-reset>↻ 2h 31m</span></div>
         <div class="name">Outline</div>
         <div class="desc">Nearly transparent — just a crisp edge over your wallpaper.</div>
       </div>
       <div class="stylecard" data-style-btn="mist" role="button" tabindex="0">
-        <div class="droplet" style="background:rgba(13,15,19,.62);border-color:rgba(255,255,255,.07);border-radius:0 0 26px 26px;box-shadow:0 8px 22px rgba(0,0,0,.4)"><span class="status-dot"></span><span class="pct">✦coding 72%</span><span class="mini"><i style="width:72%"></i></span><span class="count">×2</span></div>
+        <div class="droplet" style="background:rgba(13,15,19,.62);border-color:rgba(255,255,255,.07);border-radius:0 0 26px 26px;box-shadow:0 8px 22px rgba(0,0,0,.4)"><span class="status-dot"></span><span class="pct">✦ 72%</span><span class="mini"><i style="width:72%"></i></span><span class="reset" data-reset>↻ 2h 31m</span></div>
         <div class="name">Mist</div>
         <div class="desc">A softer, lighter droplet that floats on subtle wallpapers.</div>
       </div>
@@ -605,7 +608,7 @@ footer a:hover{color:var(--text)}
   var dateLabel = document.querySelector('[data-date]');
   // countdown target: 2h31m from load; reset clock shows the wall time it lands
   var ends = [
-    { at: Date.now() + (2 * 3600 + 31 * 60) * 1000, els: document.querySelectorAll('.island [data-reset]') },
+    { at: Date.now() + (2 * 3600 + 31 * 60) * 1000, els: document.querySelectorAll('[data-reset]') },
     { at: Date.now() + (2 * 3600 + 31 * 60) * 1000, els: [], endEl: document.querySelector('[data-end1]') },
     { at: Date.now() + (5 * 3600 + 12 * 60) * 1000, els: [], endEl: document.querySelector('[data-end2]') }
   ];
