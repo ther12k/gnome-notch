@@ -136,12 +136,12 @@ h1{
   border:1px solid var(--pill-border);border-top-width:0;
   border-radius:0 0 22px 22px;
   box-shadow:0 10px 28px rgba(0,0,0,.55);
-  width:470px;height:32px;overflow:hidden;position:relative;
+  width:380px;height:32px;overflow:hidden;position:relative;
   transition:width .3s var(--spring),height .3s var(--spring),
     background .2s,border-color .2s,box-shadow .3s;
 }
 .notch:hover .notch-box,.notch.open .notch-box{
-  width:470px;height:224px;
+  width:min(380px,calc(100vw - 24px));height:172px;
   background:var(--pill-hover);
   border-color:rgba(255,255,255,.18);
   box-shadow:0 14px 34px rgba(0,0,0,.6);
@@ -162,13 +162,18 @@ h1{
 .clock{color:var(--text);font-size:13.5px}
 
 .island{
-  position:absolute;left:16px;right:16px;top:10px;
+  position:absolute;left:12px;right:12px;top:10px;
   opacity:0;pointer-events:none;
   transition:opacity .26s var(--out) .1s;
   display:flex;flex-direction:column;gap:6px;
   font-size:12.5px;
 }
-.notch:hover .island,.notch.open .island{opacity:1}
+.media-preview{display:flex;align-items:center;gap:12px;min-width:0}
+.media-art{width:54px;height:54px;flex:none;border-radius:9px;background:linear-gradient(145deg,#b8ce62,#414b28);display:grid;place-items:center;font-size:28px;color:rgba(0,0,0,.6);box-shadow:0 5px 16px rgba(0,0,0,.28)}
+.media-meta{display:flex;flex-direction:column;gap:2px;min-width:0}
+.media-meta .track{max-width:260px}
+.media-source{color:var(--ok);font-size:10.5px;font-weight:700}
+.notch:hover .island,.notch.open .island{opacity:1;pointer-events:auto}
 .island .date{font-size:11px;font-weight:700;color:var(--muted)}
 /* island pager: ◀ ▶ flip between activities */
 .pager{display:flex;align-items:center;gap:10px}
@@ -303,7 +308,9 @@ strong.c{font-weight:700}
 .notch:hover .notch-box,.notch.open .notch-box{background:var(--nb-hover)}
 .notch-box[data-width="compact"]{width:400px}
 .notch-box[data-width="wide"]{width:590px}
-.notch-box[data-width="wide"]:hover,.notch-box[data-width="wide"].open{width:520px}
+.notch-box[data-width="wide"]:hover,.notch-box[data-width="wide"].open{width:min(520px,calc(100vw - 24px))}
+.pager{gap:7px}.pick{gap:4px}.pickbtn{width:26px;height:28px;border-radius:8px;font-size:13px}
+@media(max-width:540px){.notch-box,.notch-box[data-width="compact"],.notch-box[data-width="wide"]{width:calc(100vw - 24px)}.notch-box[data-width="wide"]:hover,.notch-box[data-width="wide"].open{width:calc(100vw - 24px)}.pill-row{inset-inline:10px;gap:6px}.pill-row .reset{font-size:10px}.pill-row .pct{font-size:10.5px}.pill-row .mini{width:30px}.pager{gap:6px}.pick{gap:3px}.pickbtn{width:27px;height:29px;font-size:13px}.pgbtn{width:24px;height:32px}.pages{min-width:0}.irow{gap:5px;font-size:11px}.irow .bar{width:56px}.reset{font-size:10px}}
 
 /* faq */
 .faq{max-width:720px;margin:40px auto 0;display:flex;flex-direction:column;gap:10px}
@@ -368,13 +375,10 @@ footer a:hover{color:var(--text)}
         <div class="notch" id="notch">
           <div class="notch-box">
             <div class="pill-row">
-              <span class="status-dot"></span>
-              <span class="pct" style="color:var(--warn)">✦c 72%</span>
-              <span class="mini"><i style="width:72%;background:var(--warn)"></i></span>
-              <span class="reset" data-reset>↻ 2h 31m</span>
-              <span class="pct">✦p2 54%</span>
-              <span class="mini"><i style="width:54%"></i></span>
-              <span class="reset" style="color:var(--muted)">↻ 5h12m</span>
+  <span class="status-dot"></span>
+  <span class="pct" style="color:var(--warn)">✦coding 72%</span>
+  <span class="mini"><i style="width:72%;background:var(--warn)"></i></span>
+  <span class="count">×2</span>
               <span class="spacer"></span>
               <span class="clock" data-clock>—</span>
             </div>
@@ -383,18 +387,23 @@ footer a:hover{color:var(--text)}
                 <button class="pgbtn" id="pgPrev" aria-label="Previous activity">◀</button>
                 <div class="pages">
                   <div class="pg" data-kind="overview">
-                    <div class="date">Tuesday, October 21</div>
+                    <div class="date" data-date>Tuesday, October 21</div>
                     <div class="irow"><span style="color:var(--text);font-weight:700">▶  Middleware</span></div>
                     <div class="irow"><span style="color:var(--accent);font-weight:700">🎯 24:59</span><span class="sub">focus</span></div>
-                    <div class="irow"><strong style="color:var(--warn)">✦ 72%</strong><span class="reset" data-reset>↻ 2h 31m</span></div>
+                    <div class="irow"><strong style="color:var(--warn)">✦coding 72%</strong><span class="bar"><i style="width:72%;background:var(--warn)"></i></span><span class="count">×2</span></div>
                   </div>
                   <div class="pg" data-kind="media" hidden>
-                    <div class="date">Now playing</div>
-                    <div class="irow big"><span class="play">▶</span><span class="track">Middleware — Overmono</span></div>
-                    <div class="sub" style="margin-top:2px">controls in the click menu</div>
+                    <div class="media-preview">
+    <div class="media-art" aria-hidden="true">◉</div>
+    <div class="media-meta">
+      <div class="sub media-source">▶  Spotify</div>
+      <div class="irow big"><span class="track">Middleware</span></div>
+      <div class="sub">Overmono</div>
+    </div>
+  </div>
                   </div>
                   <div class="pg" data-kind="ai" hidden>
-                    <div class="date">AI quotas</div>
+                    <div class="date">AI quotas · reset countdowns</div>
                     <div class="irow">
                       <span class="tagc" style="color:var(--accent)">✦coding</span>
                       <span class="bar"><i style="width:72%;background:var(--warn)"></i></span>
@@ -452,7 +461,7 @@ footer a:hover{color:var(--text)}
           <div class="srow dim" style="font-size:11px">prev · play/pause · next live in the click menu</div>
         </div>
         <h3>🎵 Music, right where it plays</h3>
-        <p>Any MPRIS player — Spotify, Firefox, mpv — shows the current track in the hover island, with controls one click away.</p>
+        <p>Any MPRIS player — Spotify, Firefox, mpv — shows artwork, track and artist in the hover island, with controls one click away.</p>
       </div>
       <div class="tile">
         <div class="stage">
@@ -464,11 +473,11 @@ footer a:hover{color:var(--text)}
       </div>
       <div class="tile">
         <div class="stage">
-          <div class="srow"><strong class="c" style="color:var(--warn)">✦c 72%</strong><span class="bar"><i style="width:72%;background:var(--warn)"></i></span><strong class="c">↻ 2h 31m @ <span data-end1>—</span></strong></div>
-          <div class="srow"><strong class="c" style="color:var(--ok)">✦p2 54%</strong><span class="bar"><i style="width:54%;background:var(--ok)"></i></span><span class="dim">↻ 5h 12m</span></div>
+          <div class="srow"><strong class="c" style="color:var(--warn)">✦coding 72%</strong><span class="bar"><i style="width:72%;background:var(--warn)"></i></span><strong class="c">↻ 2h 31m @ <span data-end1>—</span></strong></div>
+          <div class="srow"><strong class="c" style="color:var(--ok)">✦plus2 54%</strong><span class="bar"><i style="width:54%;background:var(--ok)"></i></span><span class="dim">↻ 5h 12m</span></div>
         </div>
         <h3>✦ AI quotas, at a glance</h3>
-        <p>Per-account usage bars with live reset countdowns — time left <em>and</em> the exact clock time it resets. The pill glows amber before you hit the limit.</p>
+        <p>The resting pill stays compact with the highest-used account summary; the AI page shows each account's bar and live reset countdown — time left <em>and</em> the exact reset time. The pill glows amber before you hit the limit.</p>
       </div>
       <div class="tile">
         <div class="stage">
@@ -515,22 +524,22 @@ footer a:hover{color:var(--text)}
     <p class="lede">Four presets and three widths — click any card to restyle the notch at the top of this page, then set it for real from the click menu (🎨 Pill style · ↔ Pill width).</p>
     <div class="styles">
       <div class="stylecard" data-style-btn="glass" role="button" tabindex="0">
-        <div class="droplet"><span class="status-dot"></span><span class="pct">✦ 72%</span><span class="mini"><i style="width:72%"></i></span><span class="reset" data-reset>↻ 2h 31m</span></div>
+        <div class="droplet"><span class="status-dot"></span><span class="pct">✦coding 72%</span><span class="mini"><i style="width:72%"></i></span><span class="count">×2</span></div>
         <div class="name">Glass droplet <span class="dim" style="font-weight:400">· default</span></div>
         <div class="desc">Flat top, rounded bottom, soft edge glow and a deep drop shadow — the macOS look.</div>
       </div>
       <div class="stylecard" data-style-btn="flat" role="button" tabindex="0">
-        <div class="flatpill"><span class="status-dot"></span><span class="pct">✦ 72%</span><span class="mini"><i style="width:72%"></i></span><span class="reset" data-reset>↻ 2h 31m</span></div>
+        <div class="flatpill"><span class="status-dot"></span><span class="pct">✦coding 72%</span><span class="mini"><i style="width:72%"></i></span><span class="count">×2</span></div>
         <div class="name">Flat pill</div>
         <div class="desc">A quiet, fully rounded pill for darker, minimal setups.</div>
       </div>
       <div class="stylecard" data-style-btn="outline" role="button" tabindex="0">
-        <div class="droplet" style="background:rgba(10,12,16,.45);border-color:rgba(255,255,255,.26);border-radius:0 0 20px 20px;box-shadow:0 6px 18px rgba(0,0,0,.35)"><span class="status-dot"></span><span class="pct">✦ 72%</span><span class="mini"><i style="width:72%"></i></span><span class="reset" data-reset>↻ 2h 31m</span></div>
+        <div class="droplet" style="background:rgba(10,12,16,.45);border-color:rgba(255,255,255,.26);border-radius:0 0 20px 20px;box-shadow:0 6px 18px rgba(0,0,0,.35)"><span class="status-dot"></span><span class="pct">✦coding 72%</span><span class="mini"><i style="width:72%"></i></span><span class="count">×2</span></div>
         <div class="name">Outline</div>
         <div class="desc">Nearly transparent — just a crisp edge over your wallpaper.</div>
       </div>
       <div class="stylecard" data-style-btn="mist" role="button" tabindex="0">
-        <div class="droplet" style="background:rgba(13,15,19,.62);border-color:rgba(255,255,255,.07);border-radius:0 0 26px 26px;box-shadow:0 8px 22px rgba(0,0,0,.4)"><span class="status-dot"></span><span class="pct">✦ 72%</span><span class="mini"><i style="width:72%"></i></span><span class="reset" data-reset>↻ 2h 31m</span></div>
+        <div class="droplet" style="background:rgba(13,15,19,.62);border-color:rgba(255,255,255,.07);border-radius:0 0 26px 26px;box-shadow:0 8px 22px rgba(0,0,0,.4)"><span class="status-dot"></span><span class="pct">✦coding 72%</span><span class="mini"><i style="width:72%"></i></span><span class="count">×2</span></div>
         <div class="name">Mist</div>
         <div class="desc">A softer, lighter droplet that floats on subtle wallpapers.</div>
       </div>
@@ -593,9 +602,10 @@ footer a:hover{color:var(--text)}
 (function () {
   // live clock
   var clocks = document.querySelectorAll('[data-clock]');
+  var dateLabel = document.querySelector('[data-date]');
   // countdown target: 2h31m from load; reset clock shows the wall time it lands
   var ends = [
-    { at: Date.now() + (2 * 3600 + 31 * 60) * 1000, els: document.querySelectorAll('[data-reset]') },
+    { at: Date.now() + (2 * 3600 + 31 * 60) * 1000, els: document.querySelectorAll('.island [data-reset]') },
     { at: Date.now() + (2 * 3600 + 31 * 60) * 1000, els: [], endEl: document.querySelector('[data-end1]') },
     { at: Date.now() + (5 * 3600 + 12 * 60) * 1000, els: [], endEl: document.querySelector('[data-end2]') }
   ];
@@ -607,6 +617,9 @@ footer a:hover{color:var(--text)}
     var d = new Date();
     var t = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
     clocks.forEach(function (e) { e.textContent = t; });
+    if (dateLabel) dateLabel.textContent = d.toLocaleDateString(undefined, {
+      weekday: 'long', month: 'long', day: 'numeric'
+    });
     ends.forEach(function (c) {
       var left = Math.max(0, Math.floor((c.at - Date.now()) / 1000));
       var h = Math.floor(left / 3600), m = Math.floor((left % 3600) / 60);

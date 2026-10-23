@@ -22,7 +22,7 @@ import { MprisPlayer } from 'resource:///org/gnome/shell/ui/mpris.js';
 
 /* ---------- constants ---------- */
 
-const ISLAND_MAX_W = 500;
+const ISLAND_MAX_W = 380;
 const PAD_X = 16;
 const PAD_TOP = 10;
 const PAD_BOTTOM = 12;
@@ -119,6 +119,11 @@ const PAGE_HUES = {
     config: '#ff9ecb',
 };
 
+const PAGE_NAMES = {
+    overview: 'Overview', media: 'Media', focus: 'Focus timer', ai: 'AI quota',
+    ghome: 'Google Home', battery: 'Battery', water: 'Hydration', config: 'Quick settings',
+};
+
 const CONFIG_DIR = GLib.build_filenamev([GLib.get_home_dir(), '.config', 'gnome-notch']);
 const CONFIG_PATH = GLib.build_filenamev([CONFIG_DIR, 'config.json']);
 
@@ -146,23 +151,34 @@ const DEFAULT_CONFIG = {
 function _merge(base, over) {
     if (Array.isArray(base) || typeof base !== 'object' || base === null)
         return over === undefined ? base : over;
+    if (!over || typeof over !== 'object' || Array.isArray(over))
+        over = {};
     const out = {};
-    for (const k of Object.keys(base)) out[k] = _merge(base[k], over ? over[k] : undefined);
-    for (const k of Object.keys(over || {})) if (!(k in out)) out[k] = over[k];
+    for (const k of Object.keys(base)) out[k] = _merge(base[k], over[k]);
+    for (const k of Object.keys(over)) if (!(k in out)) out[k] = over[k];
     return out;
+}
+
+function readConfig() {
+    const [ok, raw] = GLib.file_get_contents(CONFIG_PATH);
+    if (!ok)
+        throw new Error('settings file could not be read');
+    const parsed = JSON.parse(new TextDecoder().decode(raw));
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object')
+        throw new Error('settings must be a JSON object');
+    return _merge(DEFAULT_CONFIG, parsed);
 }
 
 function loadConfig() {
     try {
-        const [ok, raw] = GLib.file_get_contents(CONFIG_PATH);
-        if (ok)
-            return _merge(DEFAULT_CONFIG, JSON.parse(new TextDecoder().decode(raw)));
+        return readConfig();
     } catch (e) {
         log(`[Notch] config load failed, using defaults: ${e}`);
+        const cfg = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+        if (!Gio.File.new_for_path(CONFIG_PATH).query_exists(null))
+            saveConfig(cfg);
+        return cfg;
     }
-    const cfg = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
-    saveConfig(cfg);   // materialize defaults so "Edit config" has a file
-    return cfg;
 }
 
 function saveConfig(cfg) {
@@ -448,6 +464,12 @@ class NotchBar extends PanelMenu.Button {
         return Math.max(180, (this._app.cfg.appearance || {}).min_width || 260);
     }
 
+    _maxIslandWidth() {
+        const monitor = Main.layoutManager.primaryMonitor;
+        const available = monitor ? Math.max(220, monitor.width - 24) : ISLAND_MAX_W;
+        return Math.min(ISLAND_MAX_W, available);
+    }
+
     _applyRestingSize() {
         // measure the content at natural size first so new chips widen the
         // pill, then pin the box to the full inner width so the spacer can
@@ -455,7 +477,8 @@ class NotchBar extends PanelMenu.Button {
         this._collapsedBox.set_width(-1);
         const [, natW] = this._collapsedBox.get_preferred_width(-1);
         const [, natH] = this._collapsedBox.get_preferred_height(natW);
-        const targetW = Math.max(this._pillMinW(), natW + 2 * PAD_X);
+        const targetW = Math.min(this._maxIslandWidth(),
+            Math.max(this._pillMinW(), natW + 2 * PAD_X));
         this.set_size(targetW, this._collapsedH);
         this._collapsedBox.set_width(targetW - 2 * PAD_X);
         this._collapsedBox.set_position(PAD_X,
@@ -519,8 +542,9 @@ class NotchBar extends PanelMenu.Button {
         // content-sized height — slim rows, not a dashboard.
         this._expandedBox.set_width(-1);
         const [, natW] = this._expandedBox.get_preferred_width(-1);
-        const targetW = Math.max(this.width,
-            Math.min(natW + 2 * PAD_X, ISLAND_MAX_W));
+        const maxW = this._maxIslandWidth();
+        const targetW = Math.max(Math.min(this._pillMinW(), maxW),
+            Math.min(natW + 2 * PAD_X, maxW));
         const innerW = targetW - 2 * PAD_X;
         this._expandedBox.set_width(innerW);
         // rebuild the pager now that the island has its real width, so the
@@ -546,7 +570,8 @@ class NotchBar extends PanelMenu.Button {
         const [, natW] = this._collapsedBox.get_preferred_width(-1);
         const [, natH] = this._collapsedBox.get_preferred_height(natW);
         this.ease({
-            width: Math.max(this._pillMinW(), natW + 2 * PAD_X),
+            width: Math.min(this._maxIslandWidth(),
+                Math.max(this._pillMinW(), natW + 2 * PAD_X)),
             height: this._collapsedH,
             duration: 260,
             mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
@@ -699,41 +724,26 @@ class NotchBar extends PanelMenu.Button {
                 y_align: Clutter.ActorAlign.CENTER,
             }));
 
-            // aiacctool-style: one chip per account (label + bar + reset),
-            // so both bars show by default
-            aiAccounts.slice(0, 3).forEach((a, i) => {
-                const pct = Math.round(a.used_pct);
-                const exhausted = a.used_pct >= th.exhaust_pct;
-                const color = exhausted ? T.err
-                    : ACCOUNT_COLORS[i % ACCOUNT_COLORS.length];
-                const chip = new St.BoxLayout({
-                    y_align: Clutter.ActorAlign.CENTER,
-                    style: 'spacing: 6px;',
-                });
-                const tag = a.short ? `${String(a.short).slice(0, 7)} ` : '';
-                chip.add_child(new St.Label({
-                    text: `✦${tag}${pct}%`,
-                    y_align: Clutter.ActorAlign.CENTER,
-                    style: `${FONT}font-size: 12.5px; font-weight: 700; color: ${color};`,
-                }));
-                chip.add_child(this._miniBar(pct, _usedColor(pct), 40));
-                if (a.reset_ms) {
-                    const cd = new St.Label({
-                        text: `↻ ${app.fmtCountdown(a.reset_ms - Date.now(), true)}`,
-                        y_align: Clutter.ActorAlign.CENTER,
-                        style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${T.text};`,
-                    });
-                    this._cdLabels.push({ label: cd, until: a.reset_ms, clock: false });
-                    chip.add_child(cd);
-                }
-                this._collapsedBox.add_child(chip);
+            const summary = new St.BoxLayout({
+                y_align: Clutter.ActorAlign.CENTER,
+                style: 'spacing: 6px;',
             });
-            if (aiAccounts.length > 3)
-                this._collapsedBox.add_child(new St.Label({
-                    text: `+${aiAccounts.length - 3}`,
+            const leadAccount = aiAccounts.reduce((best, a) =>
+                !best || (a.used_pct || 0) > (best.used_pct || 0) ? a : best, null);
+            summary.add_child(new St.Label({
+                text: `✦${leadAccount && leadAccount.short
+                    ? `${String(leadAccount.short).slice(0, 5)} ` : ' '}${Math.round(worst)}%`,
+                y_align: Clutter.ActorAlign.CENTER,
+                style: `${FONT}font-size: 12.5px; font-weight: 700; color: ${_usedColor(worst)};`,
+            }));
+            summary.add_child(this._miniBar(worst, _usedColor(worst), 52));
+            if (aiAccounts.length > 1)
+                summary.add_child(new St.Label({
+                    text: `×${aiAccounts.length}`,
                     y_align: Clutter.ActorAlign.CENTER,
-                    style: `${FONT}font-size: 10px; color: ${T.muted};`,
+                    style: `${FONT}font-size: 10.5px; font-weight: 700; color: ${T.muted};`,
                 }));
+            this._collapsedBox.add_child(summary);
         } else {
             /* clock-first pill: eyes when calm, else a status dot */
             if (this._alert) {
@@ -892,16 +902,51 @@ class NotchBar extends PanelMenu.Button {
 
         // quick page chooser between the arrows: one icon per activity,
         // active page lit in its own accent color
+        const pickScroll = new St.ScrollView({
+            style: 'min-height: 31px; max-height: 31px;',
+            hscrollbar_policy: St.PolicyType.NEVER,
+            vscrollbar_policy: St.PolicyType.NEVER,
+            enable_mouse_scrolling: true,
+            x_expand: true,
+        });
         const pick = new St.BoxLayout({
-            style: 'spacing: 6px;',
-            x_align: Clutter.ActorAlign.CENTER,
+            style: 'spacing: 4px;',
+            x_align: Clutter.ActorAlign.START,
         });
         pages.forEach((p, i) => {
-            pick.add_child(this._glowBtn(p.icon,
+            const name = PAGE_NAMES[p.kind] || p.kind;
+            const btn = this._glowBtn(p.icon,
                 PAGE_HUES[p.kind] || T.accent, i === this._islandPage,
-                () => this._gotoIslandPage(i)));
+                () => this._gotoIslandPage(i), 28);
+            btn.set_accessible_name(name);
+            pick.add_child(btn);
         });
-        pageBox.add_child(pick);
+        pickScroll.set_child(pick);
+        pickScroll.connect('scroll-event', (_, event) => {
+            const hadj = pickScroll.hadjustment;
+            let delta = 0;
+            switch (event.get_scroll_direction()) {
+            case Clutter.ScrollDirection.LEFT:
+                delta = -hadj.step_increment;
+                break;
+            case Clutter.ScrollDirection.RIGHT:
+                delta = hadj.step_increment;
+                break;
+            case Clutter.ScrollDirection.SMOOTH: {
+                const [dx] = event.get_scroll_delta();
+                delta = dx * hadj.step_increment;
+                break;
+            }
+            default:
+                break;
+            }
+            if (!delta)
+                return Clutter.EVENT_PROPAGATE;
+            const max = Math.max(0, hadj.upper - hadj.page_size);
+            hadj.value = Math.max(0, Math.min(max, hadj.value + delta));
+            return Clutter.EVENT_STOP;
+        });
+        pageBox.add_child(pickScroll);
 
         row.add_child(pageBox);
         row.add_child(this._pageBtn('▶', () => this._turnIslandPage(1)));
@@ -934,10 +979,8 @@ class NotchBar extends PanelMenu.Button {
                 if (mods.ai && st.ai) {
                     const acc = _panelAccounts(st.ai);
                     const worst = acc.reduce((m, a) => Math.max(m, a.used_pct || 0), 0);
-                    const reset = acc.length ? app.fmtCountdown(
-                        (acc.find(a => a.used_pct === worst) || {}).reset_ms - Date.now(), true) : '';
                     if (acc.length)
-                        line('✦', `${Math.round(worst)}%${reset ? `  ↻ ${reset}` : ''}`,
+                        line('✦', `${Math.round(worst)}% across ${acc.length} account${acc.length === 1 ? '' : 's'}`,
                             _usedColor(worst));
                 }
                 if (mods.battery && st.battery)
@@ -953,17 +996,51 @@ class NotchBar extends PanelMenu.Button {
             pages.push({
                 kind: 'media', icon: '🎵',
                 build: () => {
-                    const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
-                    const playing = player.status === 'Playing';
-                    const title = _trunc(player.trackTitle || 'Untitled', 34);
-                    const artist = _trunc((player.trackArtists || []).join(', '), 28);
-                    box.add_child(lbl(`${playing ? '▶' : '⏸'}  ${title}`,
+                    const box = new St.BoxLayout({
+                        style: 'spacing: 12px;',
+                        y_align: Clutter.ActorAlign.CENTER,
+                    });
+                    const artStyle =
+                        'width: 54px; height: 54px; border-radius: 9px;' +
+                        'background-color: rgba(255,255,255,0.08);';
+                    let art;
+                    try {
+                        if (player.trackCoverUrl)
+                            art = new St.Icon({
+                                gicon: new Gio.FileIcon({
+                                    file: Gio.File.new_for_uri(player.trackCoverUrl),
+                                }),
+                                icon_size: 54,
+                                style: artStyle,
+                            });
+                    } catch (e) {
+                        log(`[Notch] media artwork unavailable: ${e}`);
+                    }
+                    if (!art)
+                        art = new St.Icon({
+                            icon_name: 'audio-x-generic-symbolic',
+                            icon_size: 28,
+                            style: artStyle,
+                        });
+                    box.add_child(art);
+
+                    const details = new St.BoxLayout({
+                        vertical: true,
+                        style: 'spacing: 3px;',
+                        y_align: Clutter.ActorAlign.CENTER,
+                        x_expand: true,
+                    });
+                    const appName = player.app ? player.app.get_name() : 'Now playing';
+                    details.add_child(lbl(
+                        `${player.status === 'Playing' ? '▶' : '⏸'}  ${_trunc(appName, 24)}`,
+                        `font-size: 10.5px; font-weight: 700; color: ${PAGE_HUES.media};`));
+                    details.add_child(lbl(_trunc(player.trackTitle || 'Untitled', 34),
                         `font-size: 14px; font-weight: 700; color: ${T.text};`));
+                    const artist = _trunc((player.trackArtists || []).join(', '), 32);
                     if (artist)
-                        box.add_child(lbl(artist,
+                        details.add_child(lbl(artist,
                             `font-size: 11.5px; color: ${T.muted};`));
-                    box.add_child(lbl('controls in the click menu',
-                        `font-size: 10.5px; color: ${T.muted};`));
+                    box.add_child(details);
                     return box;
                 },
             });
@@ -977,8 +1054,9 @@ class NotchBar extends PanelMenu.Button {
                     const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
                     const work = f.phase === 'work';
                     if (f.phase !== 'idle') {
-                        const timer = lbl(
-                            `${work ? '🎯 focus' : '☕ break'}  ${app.focusClockText()}`,
+                        box.add_child(lbl(work ? '🎯 focus' : '☕ break',
+                            `font-size: 11px; font-weight: 700; color: ${T.muted};`));
+                        const timer = lbl(app.focusClockText(),
                             `font-size: 15px; font-weight: 700; color: ${work ? T.accent : T.ok};`);
                         this._focusRowLbl = timer;
                         box.add_child(timer);
@@ -992,7 +1070,7 @@ class NotchBar extends PanelMenu.Button {
                         box.add_child(lbl('🎯 Focus timer',
                             `font-size: 14px; font-weight: 700; color: ${T.text};`));
                         box.add_child(lbl(
-                            `work ${app.cfg.focus.work_min}m · break ${app.cfg.focus.break_min}m — start from the menu`,
+                            `work ${app.cfg.focus.work_min}m · break ${app.cfg.focus.break_min}m`,
                             `font-size: 11px; color: ${T.muted};`));
                     }
                     return box;
@@ -1017,14 +1095,17 @@ class NotchBar extends PanelMenu.Button {
                         const bGlm = ((data.theme || {}).badge_icons &&
                             data.theme.badge_icons.glm) || '✦';
                         if (summaryAccs.length) {
-                            summaryAccs.slice(0, 4).forEach((a, i) => {
+                            summaryAccs.slice(0, 3).forEach((a, i) => {
                                 box.add_child(this._aiRow(
                                     `${bGlm}${a.short ? String(a.short).slice(0, 7) : ''}`,
                                     ACCOUNT_COLORS[i % ACCOUNT_COLORS.length],
                                     a.used_pct, a.reset_ms));
                             });
+                            if (summaryAccs.length > 3)
+                                box.add_child(lbl(`+${summaryAccs.length - 3} more accounts`,
+                                    `font-size: 10.5px; color: ${T.muted};`));
                         } else {
-                            const visible = glmAccounts.slice(0, 4);
+                            const visible = glmAccounts.slice(0, 3);
                             visible.forEach((acc, i) => {
                                 if (acc.status === 'ok') {
                                     const tok = acc.token_quota || {};
@@ -1111,8 +1192,6 @@ class NotchBar extends PanelMenu.Button {
                     if (g.devices.length > 5)
                         box.add_child(lbl(`+${g.devices.length - 5} more devices`,
                             `font-size: 10.5px; color: ${T.muted};`));
-                    box.add_child(lbl('toggle from the click menu',
-                        `font-size: 10.5px; color: ${T.muted};`));
                     return box;
                 },
             });
@@ -1129,8 +1208,6 @@ class NotchBar extends PanelMenu.Button {
                     box.add_child(lbl(`💧  ${w.ml} / ${goal} ml`,
                         `font-size: 14px; font-weight: 700; color: ${T.text};`));
                     box.add_child(this._miniBar(pct, T.accent, 180));
-                    box.add_child(lbl('+250 ml from the menu',
-                        `font-size: 10.5px; color: ${T.muted};`));
                     return box;
                 },
             });
@@ -1231,9 +1308,9 @@ class NotchBar extends PanelMenu.Button {
     }
 
     // small glowing icon toggle (used by the page chooser and config page)
-    _glowBtn(glyph, hue, active, onActivate) {
+    _glowBtn(glyph, hue, active, onActivate, size = 31) {
         const styleFor = state =>
-            `${FONT}width: 31px; height: 31px; border-radius: 10px;` +
+            `${FONT}width: ${size}px; height: ${size}px; border-radius: 9px;` +
             `font-size: 14.5px; font-weight: 700;` +
             (state === 'active'
                 ? `background-color: ${_hexA(hue, 0.20)};` +
@@ -1283,10 +1360,15 @@ class NotchBar extends PanelMenu.Button {
     _relayoutIsland() {
         if (!this._expanded)
             return;
+        this._expandedBox.set_width(-1);
+        this._renderIsland();
         const [, natW] = this._expandedBox.get_preferred_width(-1);
-        const targetW = Math.max(this.width, Math.min(natW + 2 * PAD_X, ISLAND_MAX_W));
+        const maxW = this._maxIslandWidth();
+        const targetW = Math.max(Math.min(this._pillMinW(), maxW),
+            Math.min(natW + 2 * PAD_X, maxW));
         const innerW = targetW - 2 * PAD_X;
         this._expandedBox.set_width(innerW);
+        this._renderIsland();
         const [, natH] = this._expandedBox.get_preferred_height(innerW);
         this.ease({
             width: targetW,
@@ -1615,6 +1697,7 @@ class NotchApp {
         this._notch = new NotchBar(this);
         this._notch.attach();
         this._notch.render();
+        this._scheduleSlowPoll();
 
         this._pollBattery();
         this._pollAI();
@@ -1622,7 +1705,6 @@ class NotchApp {
             this._pollGHome();
         this._fastTimer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1,
             () => this._tick());
-        this._scheduleSlowPoll();
         log('[Notch] enabled');
     }
 
@@ -1634,6 +1716,10 @@ class NotchApp {
         if (this._slowTimer) {
             GLib.source_remove(this._slowTimer);
             this._slowTimer = 0;
+        }
+        if (this._aiProc) {
+            this._aiProc.force_exit();
+            this._aiProc = null;
         }
         if (this._watcher) {
             this._watcher.destroy();
@@ -1717,6 +1803,12 @@ class NotchApp {
     }
 
     _pollAI() {
+        if (this._aiProc) {
+            this._aiProc.force_exit();
+            this._aiProc = null;
+        }
+        if (!this.cfg.modules.ai)
+            return;
         try {
             const script = GLib.build_filenamev([this._loader.path, 'ai-collector.py']);
             const proc = new Gio.Subprocess({
@@ -1724,7 +1816,11 @@ class NotchApp {
                 flags: Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE,
             });
             proc.init(null);
+            this._aiProc = proc;
             proc.communicate_utf8_async(null, null, (obj, res) => {
+                if (this._aiProc !== proc)
+                    return;
+                this._aiProc = null;
                 try {
                     const [ok, stdout, stderr] = proc.communicate_utf8_finish(res);
                     if (ok && stdout) {
@@ -1790,10 +1886,17 @@ class NotchApp {
         saveConfig(this.cfg);
         if (key === 'media')
             this._mediaChanged();
-        if (key === 'ai' && val)
+        if (key === 'ai') {
             this._pollAI();
-        if (key === 'ghome' && val)
-            this._pollGHome();
+            if (!val)
+                this.state.ai = null;
+        }
+        if (key === 'ghome') {
+            if (val)
+                this._pollGHome();
+            else
+                this.state.ghome = null;
+        }
         this._notch && this._notch.render();
     }
 
@@ -1802,7 +1905,7 @@ class NotchApp {
             const file = Gio.File.new_for_path(CONFIG_PATH);
             const editor = Gio.AppInfo.get_default_for_type('application/json', false) ||
                 Gio.AppInfo.get_default_for_type('text/plain', false);
-            if (editor)
+            if (editor && editor.supports_files())
                 editor.launch([file], null);
             else
                 Gio.AppInfo.launch_default_for_uri(file.get_uri(), null);
@@ -1812,23 +1915,40 @@ class NotchApp {
     }
 
     reloadConfig() {
+        let next;
+        try {
+            next = readConfig();
+        } catch (e) {
+            log(`[Notch] config reload failed; keeping current settings: ${e}`);
+            if (typeof Main.notify === 'function')
+                Main.notify('Notch settings were not reloaded', String(e));
+            return;
+        }
+
         const previous = this.cfg;
-        this.cfg = loadConfig();
         const today = _nowLocal().format('%Y-%m-%d');
-        if (this.cfg.water.date !== today)
-            this.cfg.water = { date: today, ml: 0 };
-        this.state.water = this.cfg.water;
+        if (next.water.date !== today)
+            next.water = { date: today, ml: 0 };
+        this.cfg = next;
+        this.state.water = next.water;
         this.cfgVersion++;
-        if (this.cfg.modules.media !== previous.modules.media)
+
+        if (next.modules.media !== previous.modules.media)
             this._mediaChanged();
-        if (this.cfg.modules.ai)
+        if (next.modules.ai !== previous.modules.ai || next.modules.ai) {
             this._pollAI();
-        if (this.cfg.modules.ghome && !previous.modules.ghome)
+            if (!next.modules.ai)
+                this.state.ai = null;
+        }
+        if (next.modules.ghome && !previous.modules.ghome)
             this._pollGHome();
-        if (this.cfg.modules.ai !== previous.modules.ai ||
-            this.cfg.ai.poll_sec !== previous.ai.poll_sec)
+        else if (!next.modules.ghome)
+            this.state.ghome = null;
+        if (next.modules.ai !== previous.modules.ai ||
+            next.ai.poll_sec !== previous.ai.poll_sec)
             this._scheduleSlowPoll();
-        saveConfig(this.cfg);
+
+        saveConfig(next);
         this._notch && this._notch.render();
         if (typeof Main.notify === 'function')
             Main.notify('Notch settings reloaded');
