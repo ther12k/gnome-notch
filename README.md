@@ -23,6 +23,7 @@ Windows. The AI-quota module spun out of my internal AI usage monitor
 |---|---|---|---|
 | **Clock** | time | date | — |
 | **Calendar** | today's date | month grid with today highlighted | — |
+| **Sound & Display** | — | interactive volume & brightness sliders, steppers, mute toggle | volume & brightness presets in menu |
 | **System strip** | — | battery · CPU temp · RAM on every page (each toggleable) | — |
 | **Media** (MPRIS) | animated equalizer while playing | artwork, track and artist | previous / play-pause / next |
 | **Focus timer** | countdown while active | countdown + progress | start work / break, or stop |

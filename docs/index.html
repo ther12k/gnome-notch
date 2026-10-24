@@ -225,6 +225,11 @@ h1{
 .strip{display:flex;justify-content:center;align-items:center;gap:10px;font-size:10.5px;font-weight:700;color:var(--muted);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);border-radius:999px;padding:3px 14px;margin:4px auto 0;width:fit-content}
 .strip i{font-style:normal;color:rgba(232,234,237,.25);font-size:10px}
 .strip .on{color:var(--ok)}
+.ctrl-row{display:flex;align-items:center;gap:10px;font-size:12px;font-weight:700}
+.ctrl-ico{width:26px;height:26px;border-radius:7px;background:rgba(255,255,255,.06);display:grid;place-items:center;font-size:13px}
+.ctrl-lbl{min-width:54px;color:var(--text)}
+.ctrl-bar{flex:1;max-width:140px}
+.ctrl-val{min-width:34px;color:var(--muted);font-variant-numeric:tabular-nums}
 .pg{display:flex;flex-direction:column;gap:6px}
 .pg[hidden]{display:none}
 .pg.big{font-size:14px;font-weight:700}
@@ -474,6 +479,21 @@ footer a:hover{color:var(--text)}
                     <div class="date" id="calTitle">Calendar</div>
                     <div class="cal-grid" id="calGrid"></div>
                   </div>
+                  <div class="pg" data-kind="controls" hidden>
+                    <div class="date">Sound &amp; Display</div>
+                    <div class="ctrl-row">
+                      <span class="ctrl-ico">🔊</span>
+                      <span class="ctrl-lbl">Sound</span>
+                      <span class="bar ctrl-bar"><i style="width:55%;background:var(--accent)"></i></span>
+                      <span class="ctrl-val">55%</span>
+                    </div>
+                    <div class="ctrl-row">
+                      <span class="ctrl-ico">☀️</span>
+                      <span class="ctrl-lbl">Display</span>
+                      <span class="bar ctrl-bar"><i style="width:100%;background:var(--warn)"></i></span>
+                      <span class="ctrl-val">100%</span>
+                    </div>
+                  </div>
                   <div class="pg" data-kind="config" hidden>
                     <div class="date">Quick settings</div>
                     <div class="cfgmods" id="cfgMods">
@@ -702,6 +722,7 @@ footer a:hover{color:var(--text)}
     battery: ['🔋', '63,214,143'],
     water: ['💧', '122,184,255'],
     calendar: ['📅', '122,184,255'],
+    controls: ['🎛', '111,217,232'],
     config: ['⚙', '255,158,203'],
   };
   pgs.forEach(function (p, i) {

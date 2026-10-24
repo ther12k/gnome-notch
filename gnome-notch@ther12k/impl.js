@@ -117,13 +117,14 @@ const PAGE_HUES = {
     battery: '#3fd68f',
     water: '#7ab8ff',
     calendar: '#7ab8ff',
+    controls: '#6fd9e8',
     config: '#ff9ecb',
 };
 
 const PAGE_NAMES = {
     overview: 'Overview', media: 'Media', focus: 'Focus timer', ai: 'AI quota',
     ghome: 'Google Home', battery: 'Battery', water: 'Hydration',
-    calendar: 'Calendar', config: 'Quick settings',
+    calendar: 'Calendar', controls: 'Sound & Display', config: 'Quick settings',
 };
 
 const CONFIG_DIR = GLib.build_filenamev([GLib.get_home_dir(), '.config', 'gnome-notch']);
@@ -137,6 +138,8 @@ const DEFAULT_CONFIG = {
         ai: true,
         ghome: false,
         water: false,
+        calendar: true,
+        controls: true,
         eyes: true,
     },
     clock_24h: true,
@@ -339,6 +342,66 @@ class MediaWatcher {
     destroy() {
         this._players.clear();
     }
+}
+
+/* ---------- sound and brightness backend helpers ---------- */
+
+function getAudioVolume(cb) {
+    try {
+        const proc = new Gio.Subprocess({
+            argv: ['wpctl', 'get-volume', '@DEFAULT_AUDIO_SINK@'],
+            flags: Gio.SubprocessFlags.STDOUT_PIPE,
+        });
+        proc.init(null);
+        proc.communicate_utf8_async(null, null, (obj, res) => {
+            try {
+                const [ok, stdout] = proc.communicate_utf8_finish(res);
+                if (ok && stdout) {
+                    const m = stdout.match(/Volume:\s+([0-9.]+)/);
+                    const vol = m ? Math.round(parseFloat(m[1]) * 100) : 50;
+                    const muted = stdout.includes('[MUTED]');
+                    cb(vol, muted);
+                }
+            } catch (e) {}
+        });
+    } catch (e) {}
+}
+
+function setAudioVolume(pct) {
+    const clamped = Math.max(0, Math.min(100, Math.round(pct)));
+    Util_spawn(`wpctl set-volume @DEFAULT_AUDIO_SINK@ ${clamped}%`);
+}
+
+function toggleAudioMute() {
+    Util_spawn('wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle');
+}
+
+function getBrightness(cb) {
+    try {
+        const proc = new Gio.Subprocess({
+            argv: ['gdbus', 'call', '--session', '--dest', 'org.gnome.SettingsDaemon.Power',
+                '--object-path', '/org/gnome/SettingsDaemon/Power',
+                '--method', 'org.freedesktop.DBus.Properties.Get',
+                'org.gnome.SettingsDaemon.Power.Screen', 'Brightness'],
+            flags: Gio.SubprocessFlags.STDOUT_PIPE,
+        });
+        proc.init(null);
+        proc.communicate_utf8_async(null, null, (obj, res) => {
+            try {
+                const [ok, stdout] = proc.communicate_utf8_finish(res);
+                if (ok && stdout) {
+                    const m = stdout.match(/<int32\s+(\d+)>|<(\d+)>/);
+                    const val = m ? parseInt(m[1] || m[2], 10) : 100;
+                    cb(val);
+                }
+            } catch (e) {}
+        });
+    } catch (e) {}
+}
+
+function setBrightness(pct) {
+    const clamped = Math.max(5, Math.min(100, Math.round(pct)));
+    Util_spawn(`gdbus call --session --dest org.gnome.SettingsDaemon.Power --object-path /org/gnome/SettingsDaemon/Power --method org.freedesktop.DBus.Properties.Set org.gnome.SettingsDaemon.Power.Screen Brightness "<int32 ${clamped}>"`);
 }
 
 /* ---------- the notch bar ---------- */
@@ -1611,6 +1674,37 @@ class NotchBar extends PanelMenu.Button {
             },
         });
 
+        if (mods.controls !== false) {
+            pages.push({
+                kind: 'controls', icon: '🎛',
+                build: () => {
+                    const c = st.controls || { volume: 50, muted: false, brightness: 100 };
+                    const box = new St.BoxLayout({ vertical: true, style: 'spacing: 8px;' });
+                    box.add_child(lbl('🎛  Sound & Display',
+                        `font-size: 11px; font-weight: 700; color: ${T.muted};`));
+
+                    const volIco = c.muted ? '🔇' : (c.volume > 50 ? '🔊' : (c.volume > 0 ? '🔉' : '🔈'));
+                    box.add_child(this._sliderRow(
+                        volIco, 'Sound', c.muted ? 0 : c.volume, PAGE_HUES.controls,
+                        val => app.setVolume(val),
+                        () => app.setVolume(Math.max(0, (c.muted ? 0 : c.volume) - 5)),
+                        () => app.setVolume(Math.min(100, (c.muted ? 0 : c.volume) + 5)),
+                        () => app.toggleMute()
+                    ));
+
+                    box.add_child(this._sliderRow(
+                        '☀️', 'Display', c.brightness, '#f5b455',
+                        val => app.setBrightness(val),
+                        () => app.setBrightness(Math.max(5, c.brightness - 10)),
+                        () => app.setBrightness(Math.min(100, c.brightness + 10)),
+                        () => app.setBrightness(c.brightness > 20 ? 15 : 100)
+                    ));
+
+                    return box;
+                },
+            });
+        }
+
         if (mods.water) {
             pages.push({
                 kind: 'water', icon: '💧',
@@ -1857,6 +1951,83 @@ class NotchBar extends PanelMenu.Button {
         return btn;
     }
 
+    _sliderRow(iconText, labelText, curVal, color, onSet, onStepDown, onStepUp, onIconClick) {
+        const row = new St.BoxLayout({
+            style: 'spacing: 8px;',
+            y_align: Clutter.ActorAlign.CENTER,
+            x_expand: true,
+        });
+
+        const icoBtn = new St.Button({
+            label: iconText,
+            style: `${FONT}font-size: 14px; width: 28px; height: 28px; border-radius: 8px; ` +
+                `background-color: rgba(255,255,255,0.06); color: ${color};`,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        if (onIconClick)
+            icoBtn.connect('clicked', onIconClick);
+        row.add_child(icoBtn);
+
+        row.add_child(new St.Label({
+            text: labelText,
+            style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${T.text}; min-width: 58px;`,
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
+
+        const trackW = 120;
+        const fillW = Math.max(0, Math.min(trackW, Math.round(trackW * curVal / 100)));
+        const trackBtn = new St.Button({
+            style: `width: ${trackW}px; height: 16px;`,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        const trackBar = new St.BoxLayout({
+            style: `width: ${trackW}px; height: 6px; border-radius: 3px; ` +
+                `background-color: rgba(255,255,255,0.12);`,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        if (fillW > 0)
+            trackBar.add_child(new St.BoxLayout({
+                style: `width: ${fillW}px; height: 6px; border-radius: 3px; ` +
+                    `background-color: ${color}; box-shadow: 0 0 6px ${_hexA(color, 0.45)};`,
+            }));
+        trackBtn.set_child(trackBar);
+        trackBtn.connect('button-press-event', (_, event) => {
+            const [clickX] = event.get_coords();
+            const [barX] = trackBtn.get_transformed_position();
+            const frac = Math.max(0, Math.min(1, (clickX - barX) / trackW));
+            onSet(Math.round(frac * 100));
+            return Clutter.EVENT_STOP;
+        });
+        row.add_child(trackBtn);
+
+        row.add_child(new St.Label({
+            text: `${curVal}%`,
+            style: `${FONT}font-size: 11px; font-weight: 700; color: ${color}; min-width: 32px; ` +
+                'font-variant-numeric: tabular-nums;',
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
+
+        const stepDown = new St.Button({
+            label: '−',
+            style: `${FONT}font-size: 13px; font-weight: 700; width: 22px; height: 22px; border-radius: 6px; ` +
+                `background-color: rgba(255,255,255,0.06); color: ${T.text};`,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        stepDown.connect('clicked', onStepDown);
+        row.add_child(stepDown);
+
+        const stepUp = new St.Button({
+            label: '+',
+            style: `${FONT}font-size: 13px; font-weight: 700; width: 22px; height: 22px; border-radius: 6px; ` +
+                `background-color: rgba(255,255,255,0.06); color: ${T.text};`,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        stepUp.connect('clicked', onStepUp);
+        row.add_child(stepUp);
+
+        return row;
+    }
+
     _aiRow(tag, tagColor, pct, resetMs) {
         const val = Math.max(0, Math.min(100, pct === null || pct === undefined ? 0 : pct));
         const color = _usedColor(val);
@@ -2044,6 +2215,41 @@ class NotchBar extends PanelMenu.Button {
             this.menu.addMenuItem(allOff);
         }
 
+        if (mods.controls !== false) {
+            const ctrl = st.controls || { volume: 50, muted: false, brightness: 100 };
+            const volSub = new PopupMenu.PopupSubMenuMenuItem(
+                ctrl.muted ? '🔇  Sound (Muted)' : `🔊  Sound (${ctrl.volume}%)`);
+            const muteItem = new PopupMenu.PopupMenuItem(ctrl.muted ? '🔊  Unmute' : '🔇  Mute');
+            muteItem.connect('activate', () => app.toggleMute());
+            volSub.menu.addMenuItem(muteItem);
+            [100, 75, 50, 25].forEach(v => {
+                const item = new PopupMenu.PopupMenuItem(`Volume ${v}%`);
+                item.connect('activate', () => app.setVolume(v));
+                volSub.menu.addMenuItem(item);
+            });
+            const volUp = new PopupMenu.PopupMenuItem('➕  Volume +5%');
+            volUp.connect('activate', () => app.setVolume(Math.min(100, ctrl.volume + 5)));
+            volSub.menu.addMenuItem(volUp);
+            const volDn = new PopupMenu.PopupMenuItem('➖  Volume −5%');
+            volDn.connect('activate', () => app.setVolume(Math.max(0, ctrl.volume - 5)));
+            volSub.menu.addMenuItem(volDn);
+            this.menu.addMenuItem(volSub);
+
+            const briSub = new PopupMenu.PopupSubMenuMenuItem(`☀️  Brightness (${ctrl.brightness}%)`);
+            [100, 75, 50, 25, 10].forEach(b => {
+                const item = new PopupMenu.PopupMenuItem(`Brightness ${b}%`);
+                item.connect('activate', () => app.setBrightness(b));
+                briSub.menu.addMenuItem(item);
+            });
+            const briUp = new PopupMenu.PopupMenuItem('➕  Brightness +10%');
+            briUp.connect('activate', () => app.setBrightness(Math.min(100, ctrl.brightness + 10)));
+            briSub.menu.addMenuItem(briUp);
+            const briDn = new PopupMenu.PopupMenuItem('➖  Brightness −10%');
+            briDn.connect('activate', () => app.setBrightness(Math.max(5, ctrl.brightness - 10)));
+            briSub.menu.addMenuItem(briDn);
+            this.menu.addMenuItem(briSub);
+        }
+
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
         const modsSub = new PopupMenu.PopupSubMenuMenuItem('🧩  Modules');
@@ -2052,6 +2258,8 @@ class NotchBar extends PanelMenu.Button {
             ['focus', '🎯  Focus timer'],
             ['battery', '🔋  Battery'],
             ['ai', '✦  AI quota'],
+            ['controls', '🎛  Sound & Display'],
+            ['calendar', '📅  Calendar'],
             ['ghome', '🏠  Google Home'],
             ['water', '💧  Hydration'],
             ['eyes', '👀  Idle eyes'],
@@ -2218,6 +2426,7 @@ class NotchApp {
             ghome: null,
             water: this.cfg.water,
             sys: { ram_pct: null, temp_c: null },
+            controls: { volume: 50, muted: false, brightness: 100 },
         };
 
         this._watcher = new MediaWatcher(() => this._mediaChanged());
@@ -2229,6 +2438,7 @@ class NotchApp {
 
         this._pollBattery();
         this._pollSys();
+        this._pollControls();
         this._pollAI();
         if (this.cfg.modules.ghome)
             this._pollGHome();
@@ -2284,6 +2494,7 @@ class NotchApp {
     _slowPoll() {
         this._pollBattery();
         this._pollSys();
+        this._pollControls();
         if (this.cfg.modules.ai)
             this._pollAI();
         if (this.cfg.modules.ghome)
@@ -2533,6 +2744,53 @@ class NotchApp {
         this._runGHome([`--${state}`, 'all']);
     }
 
+    /* ----- volume and brightness controls ----- */
+
+    _pollControls() {
+        if (!this.state.controls)
+            this.state.controls = { volume: 50, muted: false, brightness: 100 };
+        getAudioVolume((vol, muted) => {
+            if (this.state.controls.volume !== vol || this.state.controls.muted !== muted) {
+                this.state.controls.volume = vol;
+                this.state.controls.muted = muted;
+                this._notch && this._notch.render();
+            }
+        });
+        getBrightness(b => {
+            if (this.state.controls.brightness !== b) {
+                this.state.controls.brightness = b;
+                this._notch && this._notch.render();
+            }
+        });
+    }
+
+    setVolume(pct) {
+        const val = Math.max(0, Math.min(100, Math.round(pct)));
+        if (!this.state.controls)
+            this.state.controls = { volume: 50, muted: false, brightness: 100 };
+        this.state.controls.volume = val;
+        this.state.controls.muted = false;
+        setAudioVolume(val);
+        this._notch && this._notch.render();
+    }
+
+    toggleMute() {
+        if (!this.state.controls)
+            this.state.controls = { volume: 50, muted: false, brightness: 100 };
+        this.state.controls.muted = !this.state.controls.muted;
+        toggleAudioMute();
+        this._notch && this._notch.render();
+    }
+
+    setBrightness(pct) {
+        const val = Math.max(5, Math.min(100, Math.round(pct)));
+        if (!this.state.controls)
+            this.state.controls = { volume: 50, muted: false, brightness: 100 };
+        this.state.controls.brightness = val;
+        setBrightness(val);
+        this._notch && this._notch.render();
+    }
+
     /* ----- actions ----- */
 
     setModule(key, val) {
@@ -2646,6 +2904,8 @@ class NotchApp {
         this._sysTick = (this._sysTick || 0) + 1;
         if (this._sysTick % 3 === 0)
             this._pollSys();
+        if (this._sysTick % 4 === 0)
+            this._pollControls();
 
         const f = this.state.focus;
         if (f.phase !== 'idle' && Date.now() >= f.endsAt) {
