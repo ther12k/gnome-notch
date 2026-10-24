@@ -19,6 +19,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import { MprisPlayer } from 'resource:///org/gnome/shell/ui/mpris.js';
+import { Slider } from 'resource:///org/gnome/shell/ui/slider.js';
 
 /* ---------- constants ---------- */
 
@@ -532,6 +533,16 @@ class NotchBar extends PanelMenu.Button {
 
     vfunc_event(event) {
         const type = event.type();
+
+        // When the island is expanded, clicks and drags inside the expanded box
+        // belong to the controls (Slider handle, buttons, chooser) — let Clutter
+        // deliver them directly to the child actors!
+        if (this._expanded) {
+            const source = event.get_source ? event.get_source() : null;
+            if (source && source !== this && source !== this._surface)
+                return super.vfunc_event(event);
+        }
+
         if (type === Clutter.EventType.BUTTON_PRESS && event.get_button() === 1) {
             const [x, y] = event.get_coords();
             this._dragStartX = x;
@@ -896,11 +907,12 @@ class NotchBar extends PanelMenu.Button {
         const bat = st.battery ? [st.battery.pct, st.battery.charging] : null;
         const sys = st.sys ? [Math.round(st.sys.ram_pct || 0),
             Math.round(st.sys.temp_c || 0)] : null;
+        const ctrl = st.controls ? [st.controls.volume, st.controls.muted, st.controls.brightness] : null;
         const gh = st.ghome ? [
             (st.ghome.summary || {}).active_count || 0,
             (st.ghome.devices || []).map(d => `${d.name}:${d.state}`).join(','),
         ] : null;
-        return JSON.stringify([this._app.cfgVersion, media, focus, ai, bat, sys,
+        return JSON.stringify([this._app.cfgVersion, media, focus, ai, bat, sys, ctrl,
             gh, st.water ? [st.water.date, st.water.ml] : null, this._dayStr()]);
     }
 
@@ -1974,38 +1986,32 @@ class NotchBar extends PanelMenu.Button {
             y_align: Clutter.ActorAlign.CENTER,
         }));
 
-        const trackW = 120;
-        const fillW = Math.max(0, Math.min(trackW, Math.round(trackW * curVal / 100)));
-        const trackBtn = new St.Button({
-            style: `width: ${trackW}px; height: 16px;`,
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        const trackBar = new St.BoxLayout({
-            style: `width: ${trackW}px; height: 6px; border-radius: 3px; ` +
-                `background-color: rgba(255,255,255,0.12);`,
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        if (fillW > 0)
-            trackBar.add_child(new St.BoxLayout({
-                style: `width: ${fillW}px; height: 6px; border-radius: 3px; ` +
-                    `background-color: ${color}; box-shadow: 0 0 6px ${_hexA(color, 0.45)};`,
-            }));
-        trackBtn.set_child(trackBar);
-        trackBtn.connect('button-press-event', (_, event) => {
-            const [clickX] = event.get_coords();
-            const [barX] = trackBtn.get_transformed_position();
-            const frac = Math.max(0, Math.min(1, (clickX - barX) / trackW));
-            onSet(Math.round(frac * 100));
-            return Clutter.EVENT_STOP;
-        });
-        row.add_child(trackBtn);
+        const clamped = Math.max(0, Math.min(100, curVal));
+        const slider = new Slider(clamped / 100);
+        slider.style = `min-width: 130px; height: 18px; color: ${color};`;
+        slider.y_align = Clutter.ActorAlign.CENTER;
+        slider.x_expand = true;
 
-        row.add_child(new St.Label({
-            text: `${curVal}%`,
-            style: `${FONT}font-size: 11px; font-weight: 700; color: ${color}; min-width: 32px; ` +
+        const valLbl = new St.Label({
+            text: `${clamped}%`,
+            style: `${FONT}font-size: 11px; font-weight: 700; color: ${color}; min-width: 34px; ` +
                 'font-variant-numeric: tabular-nums;',
             y_align: Clutter.ActorAlign.CENTER,
-        }));
+        });
+
+        // Continuous real-time updates while holding and dragging the slider
+        slider.connect('notify::value', () => {
+            const pct = Math.round(slider.value * 100);
+            valLbl.text = `${pct}%`;
+            onSet(pct, false);
+        });
+        slider.connect('drag-end', () => {
+            const pct = Math.round(slider.value * 100);
+            onSet(pct, true);
+        });
+
+        row.add_child(slider);
+        row.add_child(valLbl);
 
         const stepDown = new St.Button({
             label: '−',
@@ -2764,14 +2770,19 @@ class NotchApp {
         });
     }
 
-    setVolume(pct) {
+    setVolume(pct, commit = true) {
         const val = Math.max(0, Math.min(100, Math.round(pct)));
         if (!this.state.controls)
             this.state.controls = { volume: 50, muted: false, brightness: 100 };
         this.state.controls.volume = val;
         this.state.controls.muted = false;
-        setAudioVolume(val);
-        this._notch && this._notch.render();
+        const now = Date.now();
+        if (commit || !this._lastVolSet || now - this._lastVolSet > 50) {
+            this._lastVolSet = now;
+            setAudioVolume(val);
+        }
+        if (commit)
+            this._notch && this._notch.render();
     }
 
     toggleMute() {
@@ -2782,13 +2793,18 @@ class NotchApp {
         this._notch && this._notch.render();
     }
 
-    setBrightness(pct) {
+    setBrightness(pct, commit = true) {
         const val = Math.max(5, Math.min(100, Math.round(pct)));
         if (!this.state.controls)
             this.state.controls = { volume: 50, muted: false, brightness: 100 };
         this.state.controls.brightness = val;
-        setBrightness(val);
-        this._notch && this._notch.render();
+        const now = Date.now();
+        if (commit || !this._lastBriSet || now - this._lastBriSet > 50) {
+            this._lastBriSet = now;
+            setBrightness(val);
+        }
+        if (commit)
+            this._notch && this._notch.render();
     }
 
     /* ----- actions ----- */
