@@ -23,7 +23,7 @@ import { Slider } from 'resource:///org/gnome/shell/ui/slider.js';
 
 /* ---------- constants ---------- */
 
-const ISLAND_MAX_W = 500;
+const ISLAND_MAX_W = 600;
 const PAD_X = 16;
 const PAD_TOP = 10;
 const PAD_BOTTOM = 12;
@@ -403,6 +403,36 @@ function getBrightness(cb) {
 function setBrightness(pct) {
     const clamped = Math.max(5, Math.min(100, Math.round(pct)));
     Util_spawn(`gdbus call --session --dest org.gnome.SettingsDaemon.Power --object-path /org/gnome/SettingsDaemon/Power --method org.freedesktop.DBus.Properties.Set org.gnome.SettingsDaemon.Power.Screen Brightness "<int32 ${clamped}>"`);
+}
+
+function actionScreenshot() {
+    try {
+        if (Main.screenshotUI)
+            Main.screenshotUI.open().catch(() => Util_spawn('gnome-screenshot -i'));
+        else
+            Util_spawn('gnome-screenshot -i');
+    } catch (e) {
+        Util_spawn('gnome-screenshot -i');
+    }
+}
+
+function actionSettings() {
+    Util_spawn('gnome-control-center');
+}
+
+function actionLock() {
+    try {
+        if (Main.screenShield)
+            Main.screenShield.lock(true);
+        else
+            Util_spawn('loginctl lock-session');
+    } catch (e) {
+        Util_spawn('loginctl lock-session');
+    }
+}
+
+function actionPowerOff() {
+    Util_spawn('gnome-session-quit --power-off');
 }
 
 /* ---------- the notch bar ---------- */
@@ -1115,15 +1145,6 @@ class NotchBar extends PanelMenu.Button {
             }));
         }
 
-        if (mode !== 'battery' && st.battery &&
-            (app.cfg.appearance.hide_panel || batteryCharging || batteryLow)) {
-            chips.add_child(new St.Label({
-                text: `${batteryCharging ? '⚡' : '🔋'} ${st.battery.pct}%`,
-                y_align: Clutter.ActorAlign.CENTER,
-                style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${batteryLow ? T.warn : (st.battery.pct >= 95 ? T.ok : T.text)};`,
-            }));
-        }
-
         if (mode !== 'ghome' && !aiMode && mods.ghome && st.ghome &&
             st.ghome.summary && st.ghome.summary.has_active)
             chips.add_child(new St.Label({
@@ -1135,23 +1156,50 @@ class NotchBar extends PanelMenu.Button {
         if (chips.get_children().length > 0)
             this._collapsedBox.add_child(chips);
 
-        /* date and clock, anchored to the right edge of the pill */
+        /* System status group: temp, battery, date, clock — ALWAYS visible on minimized pill on every page */
         this._collapsedBox.add_child(new St.Widget({ x_expand: true }));
+
+        const rightGroup = new St.BoxLayout({
+            style: 'spacing: 8px;',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+
+        if (st.sys && st.sys.temp_c !== null && st.sys.temp_c !== undefined) {
+            const t = Math.round(st.sys.temp_c);
+            const tempLbl = new St.Label({
+                text: `🌡 ${t}°C`,
+                y_align: Clutter.ActorAlign.CENTER,
+                style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${t >= 85 ? T.err : (t >= 75 ? T.warn : T.ok)}; font-variant-numeric: tabular-nums;`,
+            });
+            this._pillTempLbl = tempLbl;
+            rightGroup.add_child(tempLbl);
+        }
+
+        if (st.battery) {
+            const low = !st.battery.charging && st.battery.pct <= 20;
+            const batLbl = new St.Label({
+                text: `${st.battery.charging ? '⚡' : '🔋'} ${st.battery.pct}%`,
+                y_align: Clutter.ActorAlign.CENTER,
+                style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${low ? T.err : (st.battery.charging ? T.ok : T.text)}; font-variant-numeric: tabular-nums;`,
+            });
+            this._pillBatLbl = batLbl;
+            rightGroup.add_child(batLbl);
+        }
 
         const dateBtn = new St.Button({
             label: _nowLocal().format('%a %b %e'),
-            style: `${FONT}font-size: 12px; font-weight: 700; color: ${T.text}; ` +
-                'padding: 2px 7px; border-radius: 6px; background-color: rgba(255,255,255,0.05);',
+            style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${T.text}; ` +
+                'padding: 2px 7px; border-radius: 6px; background-color: rgba(255,255,255,0.06);',
             y_align: Clutter.ActorAlign.CENTER,
         });
         dateBtn.connect('enter-event', () => dateBtn.set_style(
-            `${FONT}font-size: 12px; font-weight: 700; color: ${PAGE_HUES.calendar}; ` +
+            `${FONT}font-size: 11.5px; font-weight: 700; color: ${PAGE_HUES.calendar}; ` +
             'padding: 2px 7px; border-radius: 6px; background-color: rgba(122,184,255,0.18); ' +
             'box-shadow: 0 0 8px rgba(122,184,255,0.30);'
         ));
         dateBtn.connect('leave-event', () => dateBtn.set_style(
-            `${FONT}font-size: 12px; font-weight: 700; color: ${T.text}; ` +
-            'padding: 2px 7px; border-radius: 6px; background-color: rgba(255,255,255,0.05);'
+            `${FONT}font-size: 11.5px; font-weight: 700; color: ${T.text}; ` +
+            'padding: 2px 7px; border-radius: 6px; background-color: rgba(255,255,255,0.06);'
         ));
         dateBtn.connect('clicked', () => {
             this._islandKind = 'calendar';
@@ -1162,14 +1210,16 @@ class NotchBar extends PanelMenu.Button {
             this._expand();
         });
         this._dateBtn = dateBtn;
-        this._collapsedBox.add_child(dateBtn);
+        rightGroup.add_child(dateBtn);
 
         this._clockLbl = new St.Label({
             text: app.clockText(),
             y_align: Clutter.ActorAlign.CENTER,
-            style: `${FONT}font-size: 13.5px; font-weight: 700; color: ${T.text}; margin-right: 3px;`,
+            style: `${FONT}font-size: 13px; font-weight: 700; color: ${T.text}; margin-right: 2px;`,
         });
-        this._collapsedBox.add_child(this._clockLbl);
+        rightGroup.add_child(this._clockLbl);
+
+        this._collapsedBox.add_child(rightGroup);
     }
 
     _makeEyes() {
@@ -1300,10 +1350,10 @@ class NotchBar extends PanelMenu.Button {
         this._pageHost = pageHost;
         this._expandedBox.add_child(pageHost);
 
-        // battery · temp · ram strip shared by every page
-        const strip = this._buildStatusStrip();
-        if (strip)
-            this._expandedBox.add_child(strip);
+        // Bottom section: volume/brightness sliders + status badges + camera/settings/lock/power icons
+        const footer = this._buildIslandFooter();
+        if (footer)
+            this._expandedBox.add_child(footer);
     }
 
     _buildStatusStrip() {
@@ -2034,6 +2084,92 @@ class NotchBar extends PanelMenu.Button {
         return row;
     }
 
+    _actionIconBtn(icon, title, onClick, color = T.text) {
+        const btn = new St.Button({
+            label: icon,
+            style: `${FONT}font-size: 14px; width: 32px; height: 28px; border-radius: 8px; ` +
+                `background-color: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.08); ` +
+                `color: ${color};`,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        btn.set_accessible_name(title);
+        btn.connect('enter-event', () => btn.set_style(
+            `${FONT}font-size: 14px; width: 32px; height: 28px; border-radius: 8px; ` +
+            `background-color: rgba(255, 255, 255, 0.20); border: 1px solid rgba(255, 255, 255, 0.22); ` +
+            `color: #ffffff; box-shadow: 0 0 8px rgba(255,255,255,0.30);`
+        ));
+        btn.connect('leave-event', () => btn.set_style(
+            `${FONT}font-size: 14px; width: 32px; height: 28px; border-radius: 8px; ` +
+            `background-color: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.08); ` +
+            `color: ${color};`
+        ));
+        btn.connect('clicked', () => {
+            onClick();
+        });
+        return btn;
+    }
+
+    _buildIslandFooter() {
+        const app = this._app;
+        const st = app.state;
+        const ctrl = st.controls || { volume: 50, muted: false, brightness: 100 };
+
+        const footer = new St.BoxLayout({
+            vertical: true,
+            style: 'spacing: 6px; margin-top: 4px; padding-top: 6px; ' +
+                'border-top: 1px solid rgba(255, 255, 255, 0.08);',
+            x_expand: true,
+        });
+
+        // 1. Sliders section: Volume + Brightness
+        const slidersBox = new St.BoxLayout({
+            vertical: true,
+            style: 'spacing: 4px;',
+            x_expand: true,
+        });
+
+        const volIco = ctrl.muted ? '🔇' : (ctrl.volume > 50 ? '🔊' : (ctrl.volume > 0 ? '🔉' : '🔈'));
+        slidersBox.add_child(this._sliderRow(
+            volIco, 'Sound', ctrl.muted ? 0 : ctrl.volume, PAGE_HUES.controls || T.accent,
+            (val, commit) => app.setVolume(val, commit),
+            () => app.setVolume(Math.max(0, (ctrl.muted ? 0 : ctrl.volume) - 5)),
+            () => app.setVolume(Math.min(100, (ctrl.muted ? 0 : ctrl.volume) + 5)),
+            () => app.toggleMute()
+        ));
+
+        slidersBox.add_child(this._sliderRow(
+            '☀️', 'Display', ctrl.brightness, '#f5b455',
+            (val, commit) => app.setBrightness(val, commit),
+            () => app.setBrightness(Math.max(5, ctrl.brightness - 10)),
+            () => app.setBrightness(Math.min(100, ctrl.brightness + 10)),
+            () => app.setBrightness(ctrl.brightness > 20 ? 15 : 100)
+        ));
+
+        footer.add_child(slidersBox);
+
+        // 2. Bottom action row: hardware status badges on left + camera, settings, lock, power icons on right
+        const actionRow = new St.BoxLayout({
+            style: 'spacing: 6px;',
+            y_align: Clutter.ActorAlign.CENTER,
+            x_expand: true,
+        });
+
+        const statusPill = this._buildStatusStrip();
+        if (statusPill)
+            actionRow.add_child(statusPill);
+
+        actionRow.add_child(new St.Widget({ x_expand: true }));
+
+        actionRow.add_child(this._actionIconBtn('📷', 'Take Screenshot', () => actionScreenshot()));
+        actionRow.add_child(this._actionIconBtn('⚙️', 'GNOME Settings', () => actionSettings()));
+        actionRow.add_child(this._actionIconBtn('🔒', 'Lock Screen', () => actionLock()));
+        actionRow.add_child(this._actionIconBtn('⏻', 'Power Off / Restart', () => actionPowerOff(), T.err));
+
+        footer.add_child(actionRow);
+
+        return footer;
+    }
+
     _aiRow(tag, tagColor, pct, resetMs) {
         const val = Math.max(0, Math.min(100, pct === null || pct === undefined ? 0 : pct));
         const color = _usedColor(val);
@@ -2138,6 +2274,17 @@ class NotchBar extends PanelMenu.Button {
             this._clockLbl.text = this._app.clockText();
         if (this._dateBtn)
             this._dateBtn.label = _nowLocal().format('%a %b %e');
+        if (this._pillTempLbl && this._app.state.sys && this._app.state.sys.temp_c !== null) {
+            const t = Math.round(this._app.state.sys.temp_c);
+            this._pillTempLbl.text = `🌡 ${t}°C`;
+            this._pillTempLbl.set_style(`${FONT}font-size: 11.5px; font-weight: 700; color: ${t >= 85 ? T.err : (t >= 75 ? T.warn : T.ok)}; font-variant-numeric: tabular-nums;`);
+        }
+        if (this._pillBatLbl && this._app.state.battery) {
+            const b = this._app.state.battery;
+            const low = !b.charging && b.pct <= 20;
+            this._pillBatLbl.text = `${b.charging ? '⚡' : '🔋'} ${b.pct}%`;
+            this._pillBatLbl.set_style(`${FONT}font-size: 11.5px; font-weight: 700; color: ${low ? T.err : (b.charging ? T.ok : T.text)}; font-variant-numeric: tabular-nums;`);
+        }
         if (this._focusPillLbl)
             this._focusPillLbl.text = this._app.focusClockText();
         if (this._focusRowLbl)

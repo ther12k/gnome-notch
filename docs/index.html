@@ -162,7 +162,7 @@ h1{
 @keyframes stripSlide{to{background-position:200% 0}}
 .notch:hover .notch-box::after,.notch.open .notch-box::after{opacity:0}
 .notch:hover .notch-box,.notch.open .notch-box{
-  width:min(470px,calc(100vw - 24px));height:212px;
+  width:min(500px,calc(100vw - 24px));height:238px;
   background:var(--pill-hover);
   border-color:rgba(255,255,255,.18);
   box-shadow:0 14px 34px rgba(0,0,0,.6),0 0 34px rgba(122,184,255,.14);
@@ -222,14 +222,19 @@ h1{
 .pgbtn:hover{background:rgba(255,255,255,.18)}
 .pages{display:flex;flex-direction:column;gap:6px;min-height:96px;justify-content:center;flex:1}
 /* battery · temp · ram strip shared by every page */
-.strip{display:flex;justify-content:center;align-items:center;gap:10px;font-size:10.5px;font-weight:700;color:var(--muted);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);border-radius:999px;padding:3px 14px;margin:4px auto 0;width:fit-content}
+.strip{display:flex;justify-content:center;align-items:center;gap:10px;font-size:10.5px;font-weight:700;color:var(--muted);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);border-radius:999px;padding:3px 14px}
 .strip i{font-style:normal;color:rgba(232,234,237,.25);font-size:10px}
 .strip .on{color:var(--ok)}
-.ctrl-row{display:flex;align-items:center;gap:10px;font-size:12px;font-weight:700}
-.ctrl-ico{width:26px;height:26px;border-radius:7px;background:rgba(255,255,255,.06);display:grid;place-items:center;font-size:13px}
-.ctrl-lbl{min-width:54px;color:var(--text)}
-.ctrl-bar{flex:1;max-width:140px}
-.ctrl-val{min-width:34px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ctrl-row{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:700}
+.ctrl-ico{width:22px;height:22px;border-radius:6px;background:rgba(255,255,255,.06);display:grid;place-items:center;font-size:12px;flex:none}
+.ctrl-lbl{min-width:44px;color:var(--text)}
+.ctrl-bar{flex:1;max-width:110px}
+.ctrl-val{min-width:32px;color:var(--muted);font-variant-numeric:tabular-nums;font-size:10.5px}
+.island-footer{display:flex;flex-direction:column;gap:6px;margin-top:4px;padding-top:6px;border-top:1px solid rgba(255,255,255,.08)}
+.footer-actions{display:flex;align-items:center;gap:6px}
+.act-btn{font:inherit;font-size:13px;width:28px;height:24px;border-radius:7px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.08);color:var(--text);display:grid;place-items:center;cursor:pointer;transition:all .15s}
+.act-btn:hover{background:rgba(255,255,255,.2);color:#fff;box-shadow:0 0 8px rgba(255,255,255,.3)}
+.pill-stat{font-size:11.5px;font-weight:700;font-variant-numeric:tabular-nums}
 .pg{display:flex;flex-direction:column;gap:6px}
 .pg[hidden]{display:none}
 .pg.big{font-size:14px;font-weight:700}
@@ -428,6 +433,8 @@ footer a:hover{color:var(--text)}
               <span class="mini"><i style="width:54%"></i></span>
               <span class="reset" style="color:var(--muted)">↻ 5h 12m</span>
               <span class="spacer"></span>
+              <span class="pill-stat" style="color:var(--ok)">🌡 70°C</span>
+              <span class="pill-stat" style="color:var(--ok)">⚡ 100%</span>
               <button class="pill-date" id="pillDate" data-pdate>📅 Sat Oct 24</button>
               <span class="clock" data-clock>—</span>
             </div>
@@ -508,7 +515,24 @@ footer a:hover{color:var(--text)}
                     <div class="sub" style="margin-top:2px">tap a chip to toggle its module</div>
                   </div>
                 </div>
-                <div class="strip"><span class="on">🔋 87%</span><i>·</i><span>🌡 54°C</span><i>·</i><span>RAM 62%</span></div>
+                <div class="island-footer">
+                  <div class="ctrl-row">
+                    <span class="ctrl-ico">🔊</span>
+                    <span class="bar ctrl-bar"><i style="width:55%;background:var(--accent)"></i></span>
+                    <span class="ctrl-val">55%</span>
+                    <span class="ctrl-ico" style="margin-left:8px">☀️</span>
+                    <span class="bar ctrl-bar"><i style="width:100%;background:var(--warn)"></i></span>
+                    <span class="ctrl-val">100%</span>
+                  </div>
+                  <div class="footer-actions">
+                    <div class="strip"><span class="on">⚡ 100%</span><i>·</i><span>🌡 70°C</span><i>·</i><span>RAM 62%</span></div>
+                    <div style="flex:1"></div>
+                    <button class="act-btn" title="Take Screenshot">📷</button>
+                    <button class="act-btn" title="Settings">⚙️</button>
+                    <button class="act-btn" title="Lock Screen">🔒</button>
+                    <button class="act-btn" style="color:var(--err)" title="Power Off">⏻</button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
