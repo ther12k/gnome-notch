@@ -141,11 +141,13 @@ const DEFAULT_CONFIG = {
     },
     clock_24h: true,
     pill_mode: 'ai',            // 'ai' = GLM chips like aiacctool, 'clock' = clock-first
-    appearance: { preset: 'glass', min_width: 260 },
+    appearance: { preset: 'glass', min_width: 260, hide_panel: false },
     focus: { work_min: 25, break_min: 5 },
     water_goal_ml: 2000,
     water: { date: '', ml: 0 },
     ai: { poll_sec: 30, warn_pct: 85, exhaust_pct: 95 },
+    // battery · temp · ram strip shown on every island page
+    status_strip: { battery: true, temp: true, ram: true },
 };
 
 /* ---------- config ---------- */
@@ -753,12 +755,14 @@ class NotchBar extends PanelMenu.Button {
         const ai = st.ai ? _panelAccounts(st.ai)
             .map(a => `${a.short}:${Math.round(a.used_pct)}:${a.reset_ms}`) : null;
         const bat = st.battery ? [st.battery.pct, st.battery.charging] : null;
+        const sys = st.sys ? [Math.round(st.sys.ram_pct || 0),
+            Math.round(st.sys.temp_c || 0)] : null;
         const gh = st.ghome ? [
             (st.ghome.summary || {}).active_count || 0,
             (st.ghome.devices || []).map(d => `${d.name}:${d.state}`).join(','),
         ] : null;
-        return JSON.stringify([this._app.cfgVersion, media, focus, ai, bat, gh,
-            st.water ? [st.water.date, st.water.ml] : null, this._dayStr()]);
+        return JSON.stringify([this._app.cfgVersion, media, focus, ai, bat, sys,
+            gh, st.water ? [st.water.date, st.water.ml] : null, this._dayStr()]);
     }
 
     _dayStr() {
@@ -1045,27 +1049,21 @@ class NotchBar extends PanelMenu.Button {
 
         if (pages.length === 1) {
             this._expandedBox.add_child(pages[this._islandPage].build());
+            const strip = this._buildStatusStrip();
+            if (strip)
+                this._expandedBox.add_child(strip);
             return;
         }
 
-        const row = new St.BoxLayout({
+        // header: ◀ ▶ plus the icon chooser, fixed at the top so it stays
+        // in place no matter which page is showing
+        const header = new St.BoxLayout({
             style: 'spacing: 8px;',
             y_align: Clutter.ActorAlign.CENTER,
             x_expand: true,
         });
-        row.add_child(this._pageBtn('◀', () => this._turnIslandPage(-1)));
+        header.add_child(this._pageBtn('◀', () => this._turnIslandPage(-1)));
 
-        const pageBox = new St.BoxLayout({
-            vertical: true,
-            style: 'spacing: 5px; min-height: 96px;',
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        if (this._expanded && this._expandedBox.width > 0)
-            pageBox.set_width(Math.max(140, this._expandedBox.width - 84));
-        pageBox.add_child(pages[this._islandPage].build());
-
-        // quick page chooser between the arrows: one icon per activity,
-        // active page lit in its own accent color
         const pickScroll = new St.ScrollView({
             style: 'min-height: 31px; max-height: 31px;',
             hscrollbar_policy: St.PolicyType.NEVER,
@@ -1075,7 +1073,7 @@ class NotchBar extends PanelMenu.Button {
         });
         const pick = new St.BoxLayout({
             style: 'spacing: 4px;',
-            x_align: Clutter.ActorAlign.START,
+            x_align: Clutter.ActorAlign.CENTER,
         });
         pages.forEach((p, i) => {
             const name = PAGE_NAMES[p.kind] || p.kind;
@@ -1110,11 +1108,77 @@ class NotchBar extends PanelMenu.Button {
             hadj.value = Math.max(0, Math.min(max, hadj.value + delta));
             return Clutter.EVENT_STOP;
         });
-        pageBox.add_child(pickScroll);
+        header.add_child(pickScroll);
+        header.add_child(this._pageBtn('▶', () => this._turnIslandPage(1)));
+        this._expandedBox.add_child(header);
 
-        row.add_child(pageBox);
-        row.add_child(this._pageBtn('▶', () => this._turnIslandPage(1)));
-        this._expandedBox.add_child(row);
+        // the page itself; slides on page turns (kept as its own actor)
+        const pageHost = new St.BoxLayout({
+            vertical: true,
+            style: 'spacing: 5px; min-height: 96px;',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        pageHost.add_child(pages[this._islandPage].build());
+        this._pageHost = pageHost;
+        this._expandedBox.add_child(pageHost);
+
+        // battery · temp · ram strip shared by every page
+        const strip = this._buildStatusStrip();
+        if (strip)
+            this._expandedBox.add_child(strip);
+    }
+
+    _buildStatusStrip() {
+        const app = this._app;
+        const st = app.state;
+        const cfg = app.cfg.status_strip || {};
+        const mods = app.cfg.modules;
+        const bits = [];
+        if (cfg.battery !== false && mods.battery && st.battery) {
+            const low = !st.battery.charging && st.battery.pct <= 20;
+            bits.push({
+                text: `${st.battery.charging ? '⚡' : '🔋'} ${st.battery.pct}%`,
+                color: low ? T.err : T.ok,
+            });
+        }
+        if (cfg.temp !== false && st.sys && st.sys.temp_c !== null &&
+            st.sys.temp_c !== undefined) {
+            const t = st.sys.temp_c;
+            bits.push({
+                text: `🌡 ${Math.round(t)}°C`,
+                color: t >= 90 ? T.err : (t >= 80 ? T.warn : T.muted),
+            });
+        }
+        if (cfg.ram !== false && st.sys && st.sys.ram_pct !== null &&
+            st.sys.ram_pct !== undefined) {
+            const r = st.sys.ram_pct;
+            bits.push({
+                text: `RAM ${Math.round(r)}%`,
+                color: r >= 90 ? T.warn : T.muted,
+            });
+        }
+        if (bits.length < 1)
+            return null;
+        const box = new St.BoxLayout({
+            style: 'spacing: 8px;',
+            x_align: Clutter.ActorAlign.CENTER,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        bits.forEach((b, i) => {
+            if (i > 0)
+                box.add_child(new St.Label({
+                    text: '·',
+                    y_align: Clutter.ActorAlign.CENTER,
+                    style: `${FONT}font-size: 10px; color: rgba(232,234,237,0.25);`,
+                }));
+            box.add_child(new St.Label({
+                text: b.text,
+                y_align: Clutter.ActorAlign.CENTER,
+                style: `${FONT}font-size: 10.5px; font-weight: 700; color: ${b.color};` +
+                    'font-variant-numeric: tabular-nums;',
+            }));
+        });
+        return box;
     }
 
     /* one page per activity; only modules with something to say */
@@ -1485,6 +1549,32 @@ class NotchBar extends PanelMenu.Button {
                             }));
                     });
                 box.add_child(widthRow);
+
+                // status strip (battery · temp · ram) + top-bar removal
+                const stripCfg = app.cfg.status_strip ||
+                    (app.cfg.status_strip = { battery: true, temp: true, ram: true });
+                const stripRow = new St.BoxLayout({ style: 'spacing: 6px;' });
+                [['battery', '🔋'], ['temp', '🌡'], ['ram', 'RAM']]
+                    .forEach(([key, name]) => {
+                        stripRow.add_child(this._textChoiceBtn(name,
+                            stripCfg[key] !== false,
+                            () => {
+                                stripCfg[key] = !(stripCfg[key] !== false);
+                                this._applyCfg();
+                            }));
+                    });
+                box.add_child(stripRow);
+
+                const barRow = new St.BoxLayout({ style: 'spacing: 6px;' });
+                barRow.add_child(this._textChoiceBtn('🖥 Hide top bar',
+                    !!((app.cfg.appearance || {}).hide_panel),
+                    () => {
+                        app.cfg.appearance = app.cfg.appearance || {};
+                        app.cfg.appearance.hide_panel =
+                            !(app.cfg.appearance.hide_panel);
+                        this._applyCfg();
+                    }));
+                box.add_child(barRow);
                 return box;
             },
         });
@@ -1504,11 +1594,11 @@ class NotchBar extends PanelMenu.Button {
         // the pill mirrors the selected activity — refresh it too
         this._renderCollapsed();
         // slide the new page in from the direction of travel, springy settle
-        const row = this._expandedBox.get_first_child();
-        if (row) {
-            row.translation_x = dir * 22;
-            row.opacity = 60;
-            row.ease({
+        const host = this._pageHost;
+        if (host) {
+            host.translation_x = dir * 22;
+            host.opacity = 60;
+            host.ease({
                 translation_x: 0, opacity: 255, duration: 280,
                 mode: Clutter.AnimationMode.EASE_OUT_BACK,
             });
@@ -1530,6 +1620,7 @@ class NotchBar extends PanelMenu.Button {
     _applyCfg() {
         this._app.cfgVersion++;
         saveConfig(this._app.cfg);
+        this._app.applyHidePanel();
         this.render();
     }
 
@@ -1918,6 +2009,7 @@ class NotchApp {
             ai: null,
             ghome: null,
             water: this.cfg.water,
+            sys: { ram_pct: null, temp_c: null },
         };
 
         this._watcher = new MediaWatcher(() => this._mediaChanged());
@@ -1925,8 +2017,10 @@ class NotchApp {
         this._notch.attach();
         this._notch.render();
         this._scheduleSlowPoll();
+        this.applyHidePanel();
 
         this._pollBattery();
+        this._pollSys();
         this._pollAI();
         if (this.cfg.modules.ghome)
             this._pollGHome();
@@ -1944,6 +2038,7 @@ class NotchApp {
             GLib.source_remove(this._slowTimer);
             this._slowTimer = 0;
         }
+        this.restorePanel();
         if (this._aiProc) {
             this._aiProc.force_exit();
             this._aiProc = null;
@@ -1980,11 +2075,87 @@ class NotchApp {
 
     _slowPoll() {
         this._pollBattery();
+        this._pollSys();
         if (this.cfg.modules.ai)
             this._pollAI();
         if (this.cfg.modules.ghome)
             this._pollGHome();
         return GLib.SOURCE_CONTINUE;
+    }
+
+    // RAM + temperature for the island's status strip; graceful nulls when
+    // the host exposes neither
+    _pollSys() {
+        const s = { ram_pct: null, temp_c: null };
+        try {
+            const [ok, bytes] = GLib.file_get_contents('/proc/meminfo');
+            if (ok) {
+                const txt = new TextDecoder().decode(bytes);
+                const total = Number((txt.match(/^MemTotal:\s+(\d+)/m) || [])[1]);
+                const avail = Number((txt.match(/^MemAvailable:\s+(\d+)/m) || [])[1]);
+                if (total > 0 && !Number.isNaN(avail))
+                    s.ram_pct = 100 * (total - avail) / total;
+            }
+        } catch (e) { /* no meminfo */ }
+        try {
+            const dir = Gio.File.new_for_path('/sys/class/thermal');
+            const names = dir.enumerate_children('standard::name',
+                Gio.FileQueryInfoFlags.NONE, null);
+            let info, best = null;
+            while ((info = names.next_file(null))) {
+                const n = info.get_name();
+                if (!n.startsWith('thermal_zone'))
+                    continue;
+                const t = parseFloat(this._readSys(`/sys/class/thermal/${n}/temp`));
+                if (!Number.isNaN(t) && (best === null || t > best))
+                    best = t;
+            }
+            names.close(null);
+            if (best !== null)
+                s.temp_c = best / 1000;
+        } catch (e) { /* no thermal zones */ }
+        this.state.sys = s;
+        this._notch && this._notch.render();
+    }
+
+    // hide the GNOME top bar so the notch is the only thing left up top
+    applyHidePanel() {
+        const want = !!((this.cfg.appearance || {}).hide_panel);
+        const panelBox = Main.layoutManager.panelBox;
+        if (!panelBox || want === this._panelHidden)
+            return;
+        try {
+            if (want) {
+                this._panelSavedH = panelBox.height;
+                panelBox.hide();
+                panelBox.set_size(panelBox.width, 0);
+            } else {
+                panelBox.show();
+                if (this._panelSavedH)
+                    panelBox.set_size(panelBox.width, this._panelSavedH);
+            }
+            if (Main.layoutManager._updateWorkArea)
+                Main.layoutManager._updateWorkArea();
+            this._panelHidden = want;
+        } catch (e) {
+            log(`[Notch] hide top bar failed: ${e}`);
+        }
+    }
+
+    restorePanel() {
+        if (!this._panelHidden)
+            return;
+        try {
+            const panelBox = Main.layoutManager.panelBox;
+            if (panelBox) {
+                panelBox.show();
+                if (this._panelSavedH)
+                    panelBox.set_size(panelBox.width, this._panelSavedH);
+            }
+            if (Main.layoutManager._updateWorkArea)
+                Main.layoutManager._updateWorkArea();
+        } catch (e) { /* best effort */ }
+        this._panelHidden = false;
     }
 
     _pollBattery() {
@@ -2177,6 +2348,7 @@ class NotchApp {
 
         saveConfig(next);
         this._notch && this._notch.render();
+        this.applyHidePanel();
         if (typeof Main.notify === 'function')
             Main.notify('Notch settings reloaded');
     }

@@ -23,6 +23,7 @@ Windows. The AI-quota module spun out of my internal AI usage monitor
 |---|---|---|---|
 | **Clock** | time | date | — |
 | **Calendar** | today's date | month grid with today highlighted | — |
+| **System strip** | — | battery · CPU temp · RAM on every page (each toggleable) | — |
 | **Media** (MPRIS) | animated equalizer while playing | artwork, track and artist | previous / play-pause / next |
 | **Focus timer** | countdown while active | countdown + progress | start work / break, or stop |
 | **Battery** | warning/charging indicator when relevant | percentage + bar | — |
@@ -32,9 +33,12 @@ Windows. The AI-quota module spun out of my internal AI usage monitor
 | **Idle eyes** | blink and glance when everything is calm | — | — |
 
 Hover opens a compact island capped at 500px wide (narrower on small
-monitors). A soft ambient halo and a thin bottom light strip tint themselves
-to the live activity — blue for the clock, amber for AI quota, green while
-music plays, with a breathing equalizer in the pill. ◀ ▶ and the labeled
+monitors). The icon chooser stays fixed at the top while pages flip below
+it, and a battery · temp · RAM strip runs along the bottom of every page
+(toggle each in the ⚙ Quick settings page). A soft ambient halo and a thin
+bottom light strip tint themselves to the live activity — blue for the
+clock, amber for AI quota, green while music plays, with a breathing
+equalizer in the pill. ◀ ▶ and the labeled
 icon chooser move between Overview, Media, Focus, AI, Battery, Google Home,
 Calendar, Hydration and Quick settings. Status pages
 are read-only; the dedicated **⚙ Quick settings** page provides small module,
@@ -45,8 +49,13 @@ with fuller detail. Click the pill for actions and the full settings menu:
 toggle **🧩 Modules**, pick a **🎨 Pill style** — glass droplet (glow border,
 default), flat pill, outline or mist — choose **↔ Pill width** (compact / regular /
 wide), or switch **AI chips in pill** on/off. Settings live in
-`~/.config/gnome-notch/config.json` (`appearance.preset`, `appearance.min_width`);
-after editing the file, choose **↻ Reload settings** in the menu. Invalid JSON is
+`~/.config/gnome-notch/config.json` (`appearance.preset`, `appearance.min_width`,
+`appearance.hide_panel`, `status_strip.battery/temp/ram`).
+Setting `appearance.hide_panel` to `true` (or the **🖥 Hide top bar** button on
+the ⚙ page) hides the GNOME top bar entirely so the notch is the only thing
+left at the top — the panel returns when the option is switched off or the
+extension is disabled. After editing the file, choose **↻ Reload settings** in
+the menu. Invalid JSON is
 left untouched and the current settings remain active until the file is fixed.
 The config editor opens the JSON file through the default file handler.
 

@@ -162,7 +162,7 @@ h1{
 @keyframes stripSlide{to{background-position:200% 0}}
 .notch:hover .notch-box::after,.notch.open .notch-box::after{opacity:0}
 .notch:hover .notch-box,.notch.open .notch-box{
-  width:min(470px,calc(100vw - 24px));height:190px;
+  width:min(470px,calc(100vw - 24px));height:212px;
   background:var(--pill-hover);
   border-color:rgba(255,255,255,.18);
   box-shadow:0 14px 34px rgba(0,0,0,.6),0 0 34px rgba(122,184,255,.14);
@@ -205,8 +205,10 @@ h1{
 .cal-grid .cal-td{background:var(--accent);color:#10131a;font-weight:800;border-radius:8px;box-shadow:0 0 7px rgba(122,184,255,.5)}
 .notch:hover .island,.notch.open .island{opacity:1;pointer-events:auto}
 .island .date{font-size:11px;font-weight:700;color:var(--muted)}
-/* island pager: ◀ ▶ flip between activities */
-.pager{display:flex;align-items:center;gap:10px}
+/* island pager: icons stay fixed on top, content flips below */
+.pager{display:flex;flex-direction:column;gap:7px}
+.ptop{display:flex;align-items:center;gap:10px}
+.ptop .pick{flex:1;margin:0}
 .pgbtn{
   font-family:var(--font);width:28px;height:36px;border-radius:10px;flex:none;
   background:rgba(255,255,255,.08);border:none;color:var(--text);
@@ -214,7 +216,11 @@ h1{
   transition:background .15s;
 }
 .pgbtn:hover{background:rgba(255,255,255,.18)}
-.pages{display:flex;flex-direction:column;gap:6px;min-height:110px;justify-content:center;flex:1}
+.pages{display:flex;flex-direction:column;gap:6px;min-height:96px;justify-content:center;flex:1}
+/* battery · temp · ram strip shared by every page */
+.strip{display:flex;justify-content:center;align-items:center;gap:8px;font-size:10.5px;font-weight:700;color:var(--muted)}
+.strip i{font-style:normal;color:rgba(232,234,237,.25);font-size:10px}
+.strip .on{color:var(--ok)}
 .pg{display:flex;flex-direction:column;gap:6px}
 .pg[hidden]{display:none}
 .pg.big{font-size:14px;font-weight:700}
@@ -417,7 +423,11 @@ footer a:hover{color:var(--text)}
             </div>
             <div class="island">
               <div class="pager">
-                <button class="pgbtn" id="pgPrev" aria-label="Previous activity">◀</button>
+                <div class="ptop">
+                  <button class="pgbtn" id="pgPrev" aria-label="Previous activity">◀</button>
+                  <div class="pick" id="pgPick"></div>
+                  <button class="pgbtn" id="pgNext" aria-label="Next activity">▶</button>
+                </div>
                 <div class="pages">
                   <div class="pg" data-kind="overview">
                     <div class="date" data-date>Tuesday, October 21</div>
@@ -472,9 +482,8 @@ footer a:hover{color:var(--text)}
                     </div>
                     <div class="sub" style="margin-top:2px">tap a chip to toggle its module</div>
                   </div>
-                  <div class="pick" id="pgPick"></div>
                 </div>
-                <button class="pgbtn" id="pgNext" aria-label="Next activity">▶</button>
+                <div class="strip"><span class="on">🔋 87%</span><i>·</i><span>🌡 54°C</span><i>·</i><span>RAM 62%</span></div>
               </div>
             </div>
           </div>
