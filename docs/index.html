@@ -131,6 +131,18 @@ h1{
 
 /* the notch itself — a faithful CSS replica of the extension */
 .notch{position:absolute;top:0;left:50%;transform:translateX(-50%);z-index:3}
+/* Rav-inspired ambient halo: breathing two-tone glow behind the pill */
+.notch::before{
+  content:"";position:absolute;left:-24px;right:-24px;top:-10px;bottom:-16px;
+  border-radius:42px;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(60% 90% at 24% 30%, rgba(63,214,143,.16), transparent 70%),
+    radial-gradient(60% 90% at 76% 40%, rgba(181,154,255,.14), transparent 70%);
+  filter:blur(16px);
+  animation:ambBreath 3.4s ease-in-out infinite;
+  transition:opacity .3s;
+}
+@keyframes ambBreath{50%{opacity:.45;transform:scale(1.04)}}
 .notch-box{
   background:var(--pill-bg);
   border:1px solid var(--pill-border);border-top-width:0;
@@ -140,11 +152,20 @@ h1{
   transition:width .3s var(--spring),height .3s var(--spring),
     background .2s,border-color .2s,box-shadow .3s;
 }
+/* Rav-style light strip on the bottom edge of the resting pill */
+.notch-box::after{
+  content:"";position:absolute;left:14px;right:14px;bottom:0;height:2px;
+  border-radius:2px;opacity:.85;transition:opacity .25s;
+  background:linear-gradient(90deg,#3fd68f,#b59aff,#7ab8ff,#3fd68f);
+  background-size:200% 100%;animation:stripSlide 3.2s linear infinite;
+}
+@keyframes stripSlide{to{background-position:200% 0}}
+.notch:hover .notch-box::after,.notch.open .notch-box::after{opacity:0}
 .notch:hover .notch-box,.notch.open .notch-box{
   width:min(470px,calc(100vw - 24px));height:190px;
   background:var(--pill-hover);
   border-color:rgba(255,255,255,.18);
-  box-shadow:0 14px 34px rgba(0,0,0,.6);
+  box-shadow:0 14px 34px rgba(0,0,0,.6),0 0 34px rgba(122,184,255,.14);
 }
 .pill-row{
   position:absolute;inset:0 16px;display:flex;align-items:center;gap:10px;
@@ -172,7 +193,12 @@ h1{
 .media-art{width:54px;height:54px;flex:none;border-radius:9px;background:linear-gradient(145deg,#b8ce62,#414b28);display:grid;place-items:center;font-size:28px;color:rgba(0,0,0,.6);box-shadow:0 5px 16px rgba(0,0,0,.28)}
 .media-meta{display:flex;flex-direction:column;gap:2px;min-width:0}
 .media-meta .track{max-width:260px}
-.media-source{color:var(--ok);font-size:10.5px;font-weight:700}
+.media-source{color:var(--ok);font-size:10.5px;font-weight:700;display:flex;align-items:center;gap:7px}
+/* live equalizer while a track plays */
+.eq{display:inline-flex;gap:2px;align-items:flex-end;height:12px}
+.eq i{width:3px;height:12px;border-radius:2px;background:var(--ok);box-shadow:0 0 6px rgba(63,214,143,.6);transform-origin:bottom;animation:eq 1s ease-in-out infinite}
+.eq i:nth-child(2){animation-delay:.15s}.eq i:nth-child(3){animation-delay:.32s}
+@keyframes eq{0%,100%{transform:scaleY(.32)}50%{transform:scaleY(1)}}
 .notch:hover .island,.notch.open .island{opacity:1;pointer-events:auto}
 .island .date{font-size:11px;font-weight:700;color:var(--muted)}
 /* island pager: ◀ ▶ flip between activities */
@@ -376,10 +402,10 @@ footer a:hover{color:var(--text)}
           <div class="notch-box">
             <div class="pill-row">
               <span class="status-dot"></span>
-              <span class="pct" style="color:var(--warn)">✦coding 72%</span>
+              <span class="pct" style="color:var(--warn)">✦c 72%</span>
               <span class="mini"><i style="width:72%;background:var(--warn)"></i></span>
               <span class="reset" data-reset>↻ 2h 31m</span>
-              <span class="pct">✦plus2 54%</span>
+              <span class="pct">✦p2 54%</span>
               <span class="mini"><i style="width:54%"></i></span>
               <span class="reset" style="color:var(--muted)">↻ 5h 12m</span>
               <span class="spacer"></span>
@@ -399,7 +425,7 @@ footer a:hover{color:var(--text)}
                     <div class="media-preview">
     <div class="media-art" aria-hidden="true">◉</div>
     <div class="media-meta">
-      <div class="sub media-source">▶  Spotify</div>
+      <div class="sub media-source"><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>▶  Spotify</div>
       <div class="irow big"><span class="track">Middleware</span></div>
       <div class="sub">Overmono</div>
     </div>

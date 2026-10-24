@@ -222,6 +222,8 @@ function _ghomeIcon(type) {
 // '#7ab8ff' → 'rgba(122,184,255,0.3)' for glow tints
 function _hexA(hex, a) {
     const h = String(hex).replace('#', '');
+    if (!/^[0-9a-fA-F]{6}$/.test(h))
+        return String(hex);   // already rgba()/named — pass through unchanged
     const r = parseInt(h.slice(0, 2), 16);
     const g = parseInt(h.slice(2, 4), 16);
     const b = parseInt(h.slice(4, 6), 16);
@@ -362,6 +364,20 @@ class NotchBar extends PanelMenu.Button {
         this._surface = new St.Widget();
         this.add_child(this._surface);
 
+        // Rav-inspired ambient halo behind the pill plus a thin light strip
+        // on the bottom edge; both tinted by the live activity and breathing
+        // slowly (_scheduleAmbientBreath). Non-reactive so they never eat
+        // hover or click events.
+        this._ambHue = T.accent;
+        this._ambUp = false;
+        this._ambTimer = 0;
+        this._eqTimers = [];
+        this._ambGlow = new St.Widget({ reactive: false, opacity: 150 });
+        this._lightStrip = new St.Widget({ reactive: false, opacity: 165 });
+        this._surface.add_child(this._ambGlow);
+        this._surface.add_child(this._lightStrip);
+        this._setAmbientHue(T.accent);
+
         this._collapsedBox = new St.BoxLayout({
             style: 'spacing: 9px;',
             y_align: Clutter.ActorAlign.CENTER,
@@ -395,10 +411,13 @@ class NotchBar extends PanelMenu.Button {
         this.connect('destroy', () => {
             this._cancelHoverTimers();
             this._cancelEyeTimers();
+            this._cancelAmbTimer();
+            this._cancelEq();
         });
 
         this._scheduleBlink();
         this._scheduleGlance();
+        this._scheduleAmbientBreath();
     }
 
     attach() {
@@ -470,6 +489,116 @@ class NotchBar extends PanelMenu.Button {
         return Math.min(ISLAND_MAX_W, available);
     }
 
+    /* ---------- ambient halo / light strip (Rav-inspired) ---------- */
+
+    _cancelAmbTimer() {
+        if (this._ambTimer) {
+            GLib.source_remove(this._ambTimer);
+            this._ambTimer = 0;
+        }
+    }
+
+    _cancelEq() {
+        this._eqTimers.forEach(t => {
+            if (t)
+                GLib.source_remove(t);
+        });
+        this._eqTimers = [];
+        if (this._ambGlow)
+            this._ambGlow.scale_x = this._ambGlow.scale_y = 1;
+    }
+
+    _ambientHueFor(kind) {
+        return this._alert ? T.err : (PAGE_HUES[kind] || T.accent);
+    }
+
+    _setAmbientHue(hex) {
+        this._ambHue = hex;
+        this._ambGlow.style = `background-color: ${_hexA(hex, 0.06)};` +
+            `border-radius: 26px; box-shadow: 0 0 26px 6px ${_hexA(hex, 0.30)};`;
+        this._lightStrip.style = `border-radius: 2px;` +
+            `background-gradient-direction: horizontal;` +
+            `background-gradient-start: ${hex};` +
+            `background-gradient-end: #b59aff;` +
+            `box-shadow: 0 0 8px ${_hexA(hex, 0.55)};`;
+    }
+
+    // slow breathing of the halo and strip — the notch feels alive at rest
+    _scheduleAmbientBreath() {
+        this._cancelAmbTimer();
+        const step = () => {
+            this._ambUp = !this._ambUp;
+            const hi = this._ambUp;
+            this._ambGlow.ease({
+                opacity: hi ? 235 : 150, duration: 1500,
+                mode: Clutter.AnimationMode.EASE_IN_OUT_SINE,
+            });
+            this._lightStrip.ease({
+                opacity: hi ? 255 : 165, duration: 1500,
+                mode: Clutter.AnimationMode.EASE_IN_OUT_SINE,
+            });
+            return GLib.SOURCE_CONTINUE;
+        };
+        step();
+        this._ambTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1500, step);
+    }
+
+    // keep the halo and light strip hugging the pill / island edges
+    _layoutAmbient(dur, w = this.width, h = this.height) {
+        const open = this._expanded;
+        const pad = open ? 46 : 22;
+        const top = open ? -14 : -8;
+        const gw = w + pad * 2;
+        const gh = h - top + (open ? 26 : 14);
+        const sw = Math.max(0, w - 28);
+        if (dur > 0) {
+            this._ambGlow.ease({
+                x: -pad, y: top, width: gw, height: gh,
+                duration: dur, mode: Clutter.AnimationMode.EASE_OUT_SINE,
+            });
+            this._lightStrip.ease({
+                x: 14, y: h - 3, width: sw, height: 2,
+                duration: dur, mode: Clutter.AnimationMode.EASE_OUT_SINE,
+            });
+        } else {
+            this._ambGlow.set_position(-pad, top);
+            this._ambGlow.set_size(gw, gh);
+            this._lightStrip.set_position(14, h - 3);
+            this._lightStrip.set_size(sw, 2);
+        }
+    }
+
+    /* animated equalizer bars while music plays (sine-driven like Rav).
+     * Each group owns its timer: the pill and an island page can both
+     * have live EQ groups at the same time. */
+    _makeEq(color) {
+        const box = new St.BoxLayout({
+            style: 'spacing: 2px;',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        const bars = [];
+        for (let i = 0; i < 3; i++) {
+            const bar = new St.Widget({
+                style: `width: 3px; height: 13px; border-radius: 2px;` +
+                    `background-color: ${color}; box-shadow: 0 0 6px ${_hexA(color, 0.6)};`,
+            });
+            bar.set_pivot_point(0.5, 1.0);
+            bar.set_scale(1, 0.5);
+            bars.push(bar);
+            box.add_child(bar);
+        }
+        const timer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {
+            const t = Date.now() / 1000;
+            bars.forEach((b, i) => {
+                b.scale_y = 0.25 + 0.75 * (0.5 + 0.5 *
+                    Math.sin(t * (9 + i * 3.7) + i * 1.9));
+            });
+            return GLib.SOURCE_CONTINUE;
+        });
+        this._eqTimers.push(timer);
+        return box;
+    }
+
     _applyRestingSize() {
         // measure the content at natural size first so new chips widen the
         // pill, then pin the box to the full inner width so the spacer can
@@ -480,6 +609,7 @@ class NotchBar extends PanelMenu.Button {
         const targetW = Math.min(this._maxIslandWidth(),
             Math.max(this._pillMinW(), natW + 2 * PAD_X));
         this.set_size(targetW, this._collapsedH);
+        this._layoutAmbient(0, targetW, this._collapsedH);
         this._collapsedBox.set_width(targetW - 2 * PAD_X);
         this._collapsedBox.set_position(PAD_X,
             Math.max(0, Math.round((this._collapsedH - natH) / 2)));
@@ -550,6 +680,7 @@ class NotchBar extends PanelMenu.Button {
         // page fills the space between the arrows instead of hugging the left
         this._renderIsland();
         const [, natH] = this._expandedBox.get_preferred_height(innerW);
+        this._layoutAmbient(300, targetW, natH + PAD_TOP + PAD_BOTTOM);
         this.ease({
             width: targetW,
             height: natH + PAD_TOP + PAD_BOTTOM,
@@ -568,9 +699,11 @@ class NotchBar extends PanelMenu.Button {
         });
         const [, natW] = this._collapsedBox.get_preferred_width(-1);
         const [, natH] = this._collapsedBox.get_preferred_height(natW);
+        const restW = Math.min(this._maxIslandWidth(),
+            Math.max(this._pillMinW(), natW + 2 * PAD_X));
+        this._layoutAmbient(260, restW, this._collapsedH);
         this.ease({
-            width: Math.min(this._maxIslandWidth(),
-                Math.max(this._pillMinW(), natW + 2 * PAD_X)),
+            width: restW,
             height: this._collapsedH,
             duration: 260,
             mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
@@ -634,10 +767,10 @@ class NotchBar extends PanelMenu.Button {
         const st = app.state;
         const mods = app.cfg.modules;
 
+        this._cancelEq();
         this._collapsedBox.destroy_all_children();
         this._cdLabels = [];
         this._eyes = [];
-
         const aiAccounts = _panelAccounts(st.ai);
         const worst = aiAccounts.reduce((m, a) => Math.max(m, a.used_pct || 0), 0);
         const batteryLow = st.battery && !st.battery.charging && st.battery.pct <= 20;
@@ -667,13 +800,22 @@ class NotchBar extends PanelMenu.Button {
             app.cfg.pill_mode !== 'clock' &&
             mods.ai && aiAccounts.length > 0;
 
+        // ambient halo + light strip follow the live activity's hue
+        this._pillKind = aiMode ? 'ai' : mode;
+        this._setAmbientHue(this._ambientHueFor(
+            this._expanded ? (this._islandKind || this._pillKind) : this._pillKind));
+
         if (mode === 'media') {
-            this._collapsedBox.add_child(new St.Widget({
-                style: `width: 7px; height: 7px; border-radius: 4px;` +
-                    `background-color: ${mediaPlaying ? T.ok : T.muted};` +
-                    `box-shadow: 0 0 7px ${mediaPlaying ? T.ok : T.muted}; margin-left: 2px;`,
-                y_align: Clutter.ActorAlign.CENTER,
-            }));
+            if (mediaPlaying) {
+                // live equalizer while a track plays
+                this._collapsedBox.add_child(this._makeEq(T.ok));
+            } else {
+                this._collapsedBox.add_child(new St.Widget({
+                    style: `width: 7px; height: 7px; border-radius: 4px;` +
+                        `background-color: ${T.muted}; box-shadow: 0 0 7px ${T.muted}; margin-left: 2px;`,
+                    y_align: Clutter.ActorAlign.CENTER,
+                }));
+            }
             this._collapsedBox.add_child(new St.Label({
                 text: `${mediaPlaying ? '▶' : '⏸'}  ${_trunc(st.media.trackTitle || 'Untitled', 22)}`,
                 y_align: Clutter.ActorAlign.CENTER,
@@ -785,11 +927,7 @@ class NotchBar extends PanelMenu.Button {
         });
 
         if (mode === 'overview' && !aiMode && mods.media && mediaPlaying)
-            chips.add_child(new St.Label({
-                text: '▶',
-                y_align: Clutter.ActorAlign.CENTER,
-                style: `${FONT}font-size: 11px; color: ${T.ok};`,
-            }));
+            chips.add_child(this._makeEq(T.ok));
 
         if (mode !== 'focus' && mods.focus && focusRunning) {
             const work = st.focus.phase === 'work';
@@ -873,6 +1011,9 @@ class NotchBar extends PanelMenu.Button {
         const app = this._app;
         const st = app.state;
 
+        // page builds may have created EQ bars; their timer references dead
+        // actors after this teardown, so stop it before rebuilding
+        this._cancelEq();
         this._expandedBox.destroy_all_children();
         this._islandCd = [];
         this._focusRowLbl = null;
@@ -1047,9 +1188,16 @@ class NotchBar extends PanelMenu.Button {
                         x_expand: true,
                     });
                     const appName = player.app ? player.app.get_name() : 'Now playing';
-                    details.add_child(lbl(
+                    const sourceRow = new St.BoxLayout({
+                        style: 'spacing: 7px;',
+                        y_align: Clutter.ActorAlign.CENTER,
+                    });
+                    if (player.status === 'Playing')
+                        sourceRow.add_child(this._makeEq(PAGE_HUES.media));
+                    sourceRow.add_child(lbl(
                         `${player.status === 'Playing' ? '▶' : '⏸'}  ${_trunc(appName, 24)}`,
                         `font-size: 10.5px; font-weight: 700; color: ${PAGE_HUES.media};`));
+                    details.add_child(sourceRow);
                     details.add_child(lbl(_trunc(player.trackTitle || 'Untitled', 34),
                         `font-size: 14px; font-weight: 700; color: ${T.text};`));
                     const artist = _trunc((player.trackArtists || []).join(', '), 32);
@@ -1289,18 +1437,19 @@ class NotchBar extends PanelMenu.Button {
             return;
         this._islandPage = idx;
         this._islandKind = pages[idx].kind;   // keep this page through re-render
+        this._setAmbientHue(this._ambientHueFor(pages[idx].kind));
         this._renderIsland();
         this._relayoutIsland();
         // the pill mirrors the selected activity — refresh it too
         this._renderCollapsed();
-        // slide the new page in from the direction of travel
+        // slide the new page in from the direction of travel, springy settle
         const row = this._expandedBox.get_first_child();
         if (row) {
             row.translation_x = dir * 22;
             row.opacity = 60;
             row.ease({
-                translation_x: 0, opacity: 255, duration: 200,
-                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                translation_x: 0, opacity: 255, duration: 280,
+                mode: Clutter.AnimationMode.EASE_OUT_BACK,
             });
         }
     }
@@ -1385,6 +1534,7 @@ class NotchBar extends PanelMenu.Button {
         this._expandedBox.set_width(innerW);
         this._renderIsland();
         const [, natH] = this._expandedBox.get_preferred_height(innerW);
+        this._layoutAmbient(220, targetW, natH + PAD_TOP + PAD_BOTTOM);
         this.ease({
             width: targetW,
             height: natH + PAD_TOP + PAD_BOTTOM,
@@ -1445,7 +1595,8 @@ class NotchBar extends PanelMenu.Button {
         const box = new St.BoxLayout({ y_align: Clutter.ActorAlign.CENTER });
         if (fillW > 0)
             box.add_child(new St.BoxLayout({
-                style: `width: ${fillW}px; height: 6px; background-color: ${color}; border-radius: 3px;`,
+                style: `width: ${fillW}px; height: 6px; background-color: ${color}; border-radius: 3px;` +
+                    `box-shadow: 0 0 6px ${_hexA(color, 0.45)};`,
             }));
         box.add_child(new St.BoxLayout({
             style: `width: ${width - fillW}px; height: 6px;` +

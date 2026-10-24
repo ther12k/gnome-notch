@@ -4,7 +4,8 @@
 
 Inspired by Nusa's visual language: glanceable resting state, rich media hierarchy
 and a compact activity surface — adapted to GNOME's hover-to-expand and click-menu
-interaction model.
+interaction model. The ambient glow, bottom light strip and live equalizer borrow
+from [Rav](https://ravdynamicisland.netlify.app/)'s dynamic island.
 
 A small, dark droplet pill hangs from the top-center of your screen — a
 macOS-style notch for GNOME. It shows the time at a glance, glances back
@@ -21,7 +22,7 @@ Windows. The AI-quota module spun out of my internal AI usage monitor
 | Module | Resting pill | Hover island | Click menu |
 |---|---|---|---|
 | **Clock** | time | date | — |
-| **Media** (MPRIS) | play indicator while playing | artwork, track and artist | previous / play-pause / next |
+| **Media** (MPRIS) | animated equalizer while playing | artwork, track and artist | previous / play-pause / next |
 | **Focus timer** | countdown while active | countdown + progress | start work / break, or stop |
 | **Battery** | warning/charging indicator when relevant | percentage + bar | — |
 | **AI quota** | one chip per account: label, percentage bar and reset countdown (up to three) | up to three account rows with reset countdowns | — |
@@ -30,8 +31,11 @@ Windows. The AI-quota module spun out of my internal AI usage monitor
 | **Idle eyes** | blink and glance when everything is calm | — | — |
 
 Hover opens a compact island capped at 500px wide (narrower on small
-monitors). ◀ ▶ and the labeled icon chooser move between Overview, Media,
-Focus, AI, Battery, Google Home, Hydration and Quick settings. Status pages
+monitors). An ambient halo and a bottom light strip tint themselves to the
+live activity — blue for the clock, amber for AI quota, green while music
+plays, with a breathing equalizer in the pill. ◀ ▶ and the labeled icon
+chooser move between Overview, Media, Focus, AI, Battery, Google Home,
+Hydration and Quick settings. Status pages
 are read-only; the dedicated **⚙ Quick settings** page provides small module,
 style and width toggles. Track controls, focus start/stop, hydration logging,
 and device actions are in the click menu. The resting pill shows each AI
