@@ -205,6 +205,10 @@ h1{
 .cal-grid .cal-td{background:var(--accent);color:#10131a;font-weight:800;border-radius:8px;box-shadow:0 0 7px rgba(122,184,255,.5)}
 .notch:hover .island,.notch.open .island{opacity:1;pointer-events:auto}
 .island .date{font-size:11px;font-weight:700;color:var(--muted)}
+.date-btn{font:inherit;font-size:11.5px;font-weight:700;color:var(--accent);background:rgba(122,184,255,.08);border:1px solid rgba(122,184,255,.14);border-radius:8px;padding:3px 8px;cursor:pointer;text-align:left;width:fit-content;transition:all .15s}
+.date-btn:hover{background:rgba(122,184,255,.2);color:#fff;box-shadow:0 0 10px rgba(122,184,255,.35)}
+.pill-date{font:inherit;font-size:11.5px;font-weight:700;color:var(--text);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:2px 7px;cursor:pointer;transition:all .15s}
+.pill-date:hover{background:rgba(122,184,255,.18);color:var(--accent);box-shadow:0 0 8px rgba(122,184,255,.3)}
 /* island pager: icons stay fixed on top, content flips below */
 .pager{display:flex;flex-direction:column;gap:7px}
 .ptop{display:flex;align-items:center;gap:10px}
@@ -419,6 +423,7 @@ footer a:hover{color:var(--text)}
               <span class="mini"><i style="width:54%"></i></span>
               <span class="reset" style="color:var(--muted)">↻ 5h 12m</span>
               <span class="spacer"></span>
+              <button class="pill-date" id="pillDate" data-pdate>📅 Sat Oct 24</button>
               <span class="clock" data-clock>—</span>
             </div>
             <div class="island">
@@ -430,7 +435,7 @@ footer a:hover{color:var(--text)}
                 </div>
                 <div class="pages">
                   <div class="pg" data-kind="overview">
-                    <div class="date" data-date>Tuesday, October 21</div>
+                    <button class="date-btn" id="dateToCal" data-date>Tuesday, October 21</button>
                     <div class="irow"><span style="color:var(--text);font-weight:700">▶  Middleware</span></div>
                     <div class="irow"><span style="color:var(--accent);font-weight:700">🎯 24:59</span><span class="sub">focus</span></div>
                     <div class="irow"><strong style="color:var(--warn)">✦ 72%</strong><span class="reset" data-reset>↻ 2h 31m</span></div>
@@ -663,6 +668,10 @@ footer a:hover{color:var(--text)}
     var d = new Date();
     var t = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
     clocks.forEach(function (e) { e.textContent = t; });
+    var pDate = document.querySelector('[data-pdate]');
+    if (pDate) pDate.textContent = '📅 ' + d.toLocaleDateString(undefined, {
+      weekday: 'short', month: 'short', day: 'numeric'
+    });
     if (dateLabel) dateLabel.textContent = d.toLocaleDateString(undefined, {
       weekday: 'long', month: 'long', day: 'numeric'
     });
@@ -716,6 +725,24 @@ footer a:hover{color:var(--text)}
   document.getElementById('pgPrev').addEventListener('click', function () { showPg(pgIdx - 1); });
   document.getElementById('pgNext').addEventListener('click', function () { showPg(pgIdx + 1); });
   showPg(0);
+
+  var calPageIdx = pgs.findIndex(function (p) { return p.getAttribute('data-kind') === 'calendar'; });
+  var dateToCal = document.getElementById('dateToCal');
+  if (dateToCal && calPageIdx >= 0) {
+    dateToCal.addEventListener('click', function (e) {
+      e.stopPropagation();
+      showPg(calPageIdx);
+    });
+  }
+  var pillDate = document.getElementById('pillDate');
+  var notchEl = document.getElementById('notch');
+  if (pillDate && calPageIdx >= 0 && notchEl) {
+    pillDate.addEventListener('click', function (e) {
+      e.stopPropagation();
+      notchEl.classList.add('open');
+      showPg(calPageIdx);
+    });
+  }
 
   // month calendar grid (demo): today highlighted, Monday-first
   var calGrid = document.getElementById('calGrid');

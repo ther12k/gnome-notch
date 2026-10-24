@@ -984,8 +984,35 @@ class NotchBar extends PanelMenu.Button {
         if (chips.get_children().length > 0)
             this._collapsedBox.add_child(chips);
 
-        /* clock, anchored to the right edge of the pill */
+        /* date and clock, anchored to the right edge of the pill */
         this._collapsedBox.add_child(new St.Widget({ x_expand: true }));
+
+        const dateBtn = new St.Button({
+            label: _nowLocal().format('%a %b %e'),
+            style: `${FONT}font-size: 12px; font-weight: 700; color: ${T.text}; ` +
+                'padding: 2px 7px; border-radius: 6px; background-color: rgba(255,255,255,0.05);',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        dateBtn.connect('enter-event', () => dateBtn.set_style(
+            `${FONT}font-size: 12px; font-weight: 700; color: ${PAGE_HUES.calendar}; ` +
+            'padding: 2px 7px; border-radius: 6px; background-color: rgba(122,184,255,0.18); ' +
+            'box-shadow: 0 0 8px rgba(122,184,255,0.30);'
+        ));
+        dateBtn.connect('leave-event', () => dateBtn.set_style(
+            `${FONT}font-size: 12px; font-weight: 700; color: ${T.text}; ` +
+            'padding: 2px 7px; border-radius: 6px; background-color: rgba(255,255,255,0.05);'
+        ));
+        dateBtn.connect('clicked', () => {
+            this._islandKind = 'calendar';
+            const pages = this._islandPages();
+            const calIdx = pages.findIndex(p => p.kind === 'calendar');
+            if (calIdx >= 0)
+                this._islandPage = calIdx;
+            this._expand();
+        });
+        this._dateBtn = dateBtn;
+        this._collapsedBox.add_child(dateBtn);
+
         this._clockLbl = new St.Label({
             text: app.clockText(),
             y_align: Clutter.ActorAlign.CENTER,
@@ -1196,8 +1223,28 @@ class NotchBar extends PanelMenu.Button {
             kind: 'overview', icon: '🗓',
             build: () => {
                 const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
-                box.add_child(lbl(_nowLocal().format('%A, %B %e'),
-                    `font-size: 11px; font-weight: 700; color: ${T.muted};`));
+                const dateBtn = new St.Button({
+                    label: `📅  ${_nowLocal().format('%A, %B %e')}`,
+                    style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${PAGE_HUES.calendar}; ` +
+                        'padding: 3px 8px; border-radius: 8px; background-color: rgba(122,184,255,0.08);',
+                    x_align: Clutter.ActorAlign.START,
+                });
+                dateBtn.connect('enter-event', () => dateBtn.set_style(
+                    `${FONT}font-size: 11.5px; font-weight: 700; color: ${PAGE_HUES.calendar}; ` +
+                    'padding: 3px 8px; border-radius: 8px; background-color: rgba(122,184,255,0.20); ' +
+                    'box-shadow: 0 0 8px rgba(122,184,255,0.35);'
+                ));
+                dateBtn.connect('leave-event', () => dateBtn.set_style(
+                    `${FONT}font-size: 11.5px; font-weight: 700; color: ${PAGE_HUES.calendar}; ` +
+                    'padding: 3px 8px; border-radius: 8px; background-color: rgba(122,184,255,0.08);'
+                ));
+                dateBtn.connect('clicked', () => {
+                    const allPages = this._islandPages();
+                    const calIdx = allPages.findIndex(p => p.kind === 'calendar');
+                    if (calIdx >= 0)
+                        this._gotoIslandPage(calIdx);
+                });
+                box.add_child(dateBtn);
                 const line = (icon, text, color) => box.add_child(lbl(
                     `${icon}  ${text}`, `font-size: 12.5px; font-weight: 700; color: ${color};`));
                 if (mods.media && st.media)
@@ -1813,6 +1860,8 @@ class NotchBar extends PanelMenu.Button {
     tick() {
         if (this._clockLbl)
             this._clockLbl.text = this._app.clockText();
+        if (this._dateBtn)
+            this._dateBtn.label = _nowLocal().format('%a %b %e');
         if (this._focusPillLbl)
             this._focusPillLbl.text = this._app.focusClockText();
         if (this._focusRowLbl)
@@ -2128,30 +2177,44 @@ class NotchApp {
             }
         } catch (e) { /* no meminfo */ }
         try {
-            const dir = Gio.File.new_for_path('/sys/class/thermal');
-            const names = dir.enumerate_children('standard::name',
-                Gio.FileQueryInfoFlags.NONE, null);
-            let info, cpuTemp = null, maxTemp = null;
-            while ((info = names.next_file(null))) {
-                const n = info.get_name();
-                if (!n.startsWith('thermal_zone'))
-                    continue;
-                const raw = this._readSys(`/sys/class/thermal/${n}/temp`);
-                const type = (this._readSys(`/sys/class/thermal/${n}/type`) || '').toLowerCase();
-                const t = parseFloat(raw);
-                if (Number.isNaN(t) || t <= 0)
-                    continue;
-                const deg = t > 1000 ? t / 1000 : t;
-                if (deg > 115)
-                    continue;
-                if (type.includes('pkg') || type.includes('tcpu') || type.includes('core'))
-                    cpuTemp = deg;
-                else if (maxTemp === null || deg > maxTemp)
-                    maxTemp = deg;
+            let cpuTemp = null, maxTemp = null;
+            // 1. Direct check of thermal zones 0..9 (avoids directory enumeration failures)
+            for (let i = 0; i < 10; i++) {
+                const raw = this._readSys(`/sys/class/thermal/thermal_zone${i}/temp`);
+                if (raw) {
+                    const t = parseFloat(raw);
+                    if (!Number.isNaN(t) && t > 0) {
+                        const deg = t > 1000 ? t / 1000 : t;
+                        if (deg >= 20 && deg <= 115) {
+                            const typ = (this._readSys(`/sys/class/thermal/thermal_zone${i}/type`) || '').toLowerCase();
+                            if (typ.includes('pkg') || typ.includes('tcpu') || typ.includes('core'))
+                                cpuTemp = deg;
+                            else if (maxTemp === null || deg > maxTemp)
+                                maxTemp = deg;
+                        }
+                    }
+                }
             }
-            names.close(null);
+            // 2. Direct check of hwmon coretemp / cpu inputs (hwmon0..9)
+            if (cpuTemp === null) {
+                for (let h = 0; h < 10; h++) {
+                    const raw = this._readSys(`/sys/class/hwmon/hwmon${h}/temp1_input`);
+                    if (raw) {
+                        const t = parseFloat(raw);
+                        if (!Number.isNaN(t) && t > 0) {
+                            const deg = t > 1000 ? t / 1000 : t;
+                            if (deg >= 20 && deg <= 115) {
+                                cpuTemp = deg;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
             s.temp_c = cpuTemp !== null ? cpuTemp : maxTemp;
-        } catch (e) { /* no thermal zones */ }
+        } catch (e) {
+            log(`[Notch] thermal reading error: ${e}`);
+        }
         this.state.sys = s;
         this._notch && this._notch.render();
     }
@@ -2434,6 +2497,10 @@ class NotchApp {
     /* ----- 1s tick ----- */
 
     _tick() {
+        this._sysTick = (this._sysTick || 0) + 1;
+        if (this._sysTick % 3 === 0)
+            this._pollSys();
+
         const f = this.state.focus;
         if (f.phase !== 'idle' && Date.now() >= f.endsAt) {
             const wasWork = f.phase === 'work';
