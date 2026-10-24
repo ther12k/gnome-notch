@@ -116,12 +116,14 @@ const PAGE_HUES = {
     ghome: '#6fd9e8',
     battery: '#3fd68f',
     water: '#7ab8ff',
+    calendar: '#7ab8ff',
     config: '#ff9ecb',
 };
 
 const PAGE_NAMES = {
     overview: 'Overview', media: 'Media', focus: 'Focus timer', ai: 'AI quota',
-    ghome: 'Google Home', battery: 'Battery', water: 'Hydration', config: 'Quick settings',
+    ghome: 'Google Home', battery: 'Battery', water: 'Hydration',
+    calendar: 'Calendar', config: 'Quick settings',
 };
 
 const CONFIG_DIR = GLib.build_filenamev([GLib.get_home_dir(), '.config', 'gnome-notch']);
@@ -372,8 +374,8 @@ class NotchBar extends PanelMenu.Button {
         this._ambUp = false;
         this._ambTimer = 0;
         this._eqTimers = [];
-        this._ambGlow = new St.Widget({ reactive: false, opacity: 150 });
-        this._lightStrip = new St.Widget({ reactive: false, opacity: 165 });
+        this._ambGlow = new St.Widget({ reactive: false, opacity: 100 });
+        this._lightStrip = new St.Widget({ reactive: false, opacity: 140 });
         this._surface.add_child(this._ambGlow);
         this._surface.add_child(this._lightStrip);
         this._setAmbientHue(T.accent);
@@ -514,27 +516,28 @@ class NotchBar extends PanelMenu.Button {
 
     _setAmbientHue(hex) {
         this._ambHue = hex;
-        this._ambGlow.style = `background-color: ${_hexA(hex, 0.06)};` +
-            `border-radius: 26px; box-shadow: 0 0 26px 6px ${_hexA(hex, 0.30)};`;
+        this._ambGlow.style = `background-color: ${_hexA(hex, 0.03)};` +
+            `border-radius: 26px; box-shadow: 0 0 14px 2px ${_hexA(hex, 0.16)};`;
         this._lightStrip.style = `border-radius: 2px;` +
             `background-gradient-direction: horizontal;` +
             `background-gradient-start: ${hex};` +
             `background-gradient-end: #b59aff;` +
-            `box-shadow: 0 0 8px ${_hexA(hex, 0.55)};`;
+            `box-shadow: 0 0 5px ${_hexA(hex, 0.30)};`;
     }
 
-    // slow breathing of the halo and strip — the notch feels alive at rest
+    // slow breathing of the halo and strip — kept subtle so the notch
+    // glows softly rather than shining
     _scheduleAmbientBreath() {
         this._cancelAmbTimer();
         const step = () => {
             this._ambUp = !this._ambUp;
             const hi = this._ambUp;
             this._ambGlow.ease({
-                opacity: hi ? 235 : 150, duration: 1500,
+                opacity: hi ? 135 : 85, duration: 1500,
                 mode: Clutter.AnimationMode.EASE_IN_OUT_SINE,
             });
             this._lightStrip.ease({
-                opacity: hi ? 255 : 165, duration: 1500,
+                opacity: hi ? 185 : 120, duration: 1500,
                 mode: Clutter.AnimationMode.EASE_IN_OUT_SINE,
             });
             return GLib.SOURCE_CONTINUE;
@@ -854,6 +857,12 @@ class NotchBar extends PanelMenu.Button {
                 text: `💧  ${w.ml} / ${app.cfg.water_goal_ml} ml`,
                 y_align: Clutter.ActorAlign.CENTER,
                 style: `${FONT}font-size: 12.5px; font-weight: 700; color: ${T.accent};`,
+            }));
+        } else if (mode === 'calendar') {
+            this._collapsedBox.add_child(new St.Label({
+                text: `📅  ${_nowLocal().format('%b %e')}`,
+                y_align: Clutter.ActorAlign.CENTER,
+                style: `${FONT}font-size: 12.5px; font-weight: 700; color: ${T.text};`,
             }));
         } else if (aiMode) {
             const th = app.cfg.ai;
@@ -1360,6 +1369,58 @@ class NotchBar extends PanelMenu.Button {
                 },
             });
         }
+
+        // month calendar: today highlighted, Monday-first grid
+        pages.push({
+            kind: 'calendar', icon: '📅',
+            build: () => {
+                const hue = PAGE_HUES.calendar;
+                const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
+                box.add_child(lbl(`📅  ${_nowLocal().format('%B %Y')}`,
+                    `font-size: 11px; font-weight: 700; color: ${T.muted};`));
+
+                const cell = (text, style) => new St.Label({
+                    text,
+                    x_expand: true,
+                    x_align: Clutter.ActorAlign.CENTER,
+                    y_align: Clutter.ActorAlign.CENTER,
+                    style: `${FONT}font-size: 11px; min-width: 32px; ${style}`,
+                });
+
+                const wkRow = new St.BoxLayout({ style: 'spacing: 2px;' });
+                ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].forEach(d =>
+                    wkRow.add_child(cell(d, `font-size: 9.5px; font-weight: 700; color: ${T.muted};`)));
+                box.add_child(wkRow);
+
+                const now = _nowLocal();
+                const y = now.get_year();
+                const m = now.get_month();
+                const today = now.get_day_of_month();
+                const daysInMonth = new Date(y, m, 0).getDate();
+                const firstDow = (new Date(y, m - 1, 1).getDay() + 6) % 7; // Monday = 0
+                const grid = new St.BoxLayout({ vertical: true, style: 'spacing: 2px;' });
+                for (let d = 1 - firstDow; d <= daysInMonth; d += 7) {
+                    const row = new St.BoxLayout({ style: 'spacing: 2px;' });
+                    for (let k = 0; k < 7; k++) {
+                        const day = d + k;
+                        if (day < 1 || day > daysInMonth) {
+                            row.add_child(cell('', ''));
+                            continue;
+                        }
+                        if (day === today)
+                            row.add_child(cell(String(day),
+                                `font-weight: 800; color: #10131a; background-color: ${hue};` +
+                                `border-radius: 8px; padding: 0 7px; box-shadow: 0 0 7px ${_hexA(hue, 0.5)};`));
+                        else
+                            row.add_child(cell(String(day),
+                                `font-weight: 600; color: ${T.text};`));
+                    }
+                    grid.add_child(row);
+                }
+                box.add_child(grid);
+                return box;
+            },
+        });
 
         if (mods.water) {
             pages.push({

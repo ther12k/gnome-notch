@@ -136,13 +136,13 @@ h1{
   content:"";position:absolute;left:-24px;right:-24px;top:-10px;bottom:-16px;
   border-radius:42px;z-index:-1;pointer-events:none;
   background:
-    radial-gradient(60% 90% at 24% 30%, rgba(63,214,143,.16), transparent 70%),
-    radial-gradient(60% 90% at 76% 40%, rgba(181,154,255,.14), transparent 70%);
+    radial-gradient(60% 90% at 24% 30%, rgba(63,214,143,.09), transparent 70%),
+    radial-gradient(60% 90% at 76% 40%, rgba(181,154,255,.08), transparent 70%);
   filter:blur(16px);
   animation:ambBreath 3.4s ease-in-out infinite;
   transition:opacity .3s;
 }
-@keyframes ambBreath{50%{opacity:.45;transform:scale(1.04)}}
+@keyframes ambBreath{50%{opacity:.32;transform:scale(1.03)}}
 .notch-box{
   background:var(--pill-bg);
   border:1px solid var(--pill-border);border-top-width:0;
@@ -199,6 +199,10 @@ h1{
 .eq i{width:3px;height:12px;border-radius:2px;background:var(--ok);box-shadow:0 0 6px rgba(63,214,143,.6);transform-origin:bottom;animation:eq 1s ease-in-out infinite}
 .eq i:nth-child(2){animation-delay:.15s}.eq i:nth-child(3){animation-delay:.32s}
 @keyframes eq{0%,100%{transform:scaleY(.32)}50%{transform:scaleY(1)}}
+/* month calendar grid */
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;font-size:11px;font-weight:600}
+.cal-grid .cal-h{font-size:9.5px;font-weight:700;color:var(--muted)}
+.cal-grid .cal-td{background:var(--accent);color:#10131a;font-weight:800;border-radius:8px;box-shadow:0 0 7px rgba(122,184,255,.5)}
 .notch:hover .island,.notch.open .island{opacity:1;pointer-events:auto}
 .island .date{font-size:11px;font-weight:700;color:var(--muted)}
 /* island pager: ◀ ▶ flip between activities */
@@ -451,6 +455,10 @@ footer a:hover{color:var(--text)}
                     <div class="irow big"><span>🔋 87%</span><span class="bar" style="width:120px"><i style="width:87%;background:var(--ok)"></i></span></div>
                     <div class="irow big"><span>💧 1250 / 2000 ml</span><span class="bar" style="width:120px"><i style="width:62%;background:var(--accent)"></i></span></div>
                   </div>
+                  <div class="pg" data-kind="calendar" hidden>
+                    <div class="date" id="calTitle">Calendar</div>
+                    <div class="cal-grid" id="calGrid"></div>
+                  </div>
                   <div class="pg" data-kind="config" hidden>
                     <div class="date">Quick settings</div>
                     <div class="cfgmods" id="cfgMods">
@@ -675,6 +683,7 @@ footer a:hover{color:var(--text)}
     ghome: ['🏠', '111,217,232'],
     battery: ['🔋', '63,214,143'],
     water: ['💧', '122,184,255'],
+    calendar: ['📅', '122,184,255'],
     config: ['⚙', '255,158,203'],
   };
   pgs.forEach(function (p, i) {
@@ -698,6 +707,28 @@ footer a:hover{color:var(--text)}
   document.getElementById('pgPrev').addEventListener('click', function () { showPg(pgIdx - 1); });
   document.getElementById('pgNext').addEventListener('click', function () { showPg(pgIdx + 1); });
   showPg(0);
+
+  // month calendar grid (demo): today highlighted, Monday-first
+  var calGrid = document.getElementById('calGrid');
+  var calTitle = document.getElementById('calTitle');
+  if (calGrid) {
+    var nowC = new Date();
+    var yC = nowC.getFullYear(), mC = nowC.getMonth(), todayC = nowC.getDate();
+    calTitle.textContent = nowC.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    var daysInMonth = new Date(yC, mC + 1, 0).getDate();
+    var firstDow = (new Date(yC, mC, 1).getDay() + 6) % 7;
+    var html = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map(function (d) {
+      return '<span class="cal-h">' + d + '</span>';
+    }).join('');
+    for (var i = 1 - firstDow; i <= daysInMonth; i += 7) {
+      for (var k = 0; k < 7; k++) {
+        var day = i + k;
+        if (day < 1 || day > daysInMonth) { html += '<span></span>'; continue; }
+        html += '<span' + (day === todayC ? ' class="cal-td"' : '') + '>' + day + '</span>';
+      }
+    }
+    calGrid.innerHTML = html;
+  }
 
   // config page: module chips toggle
   document.querySelectorAll('#cfgMods [data-mod]').forEach(function (b) {

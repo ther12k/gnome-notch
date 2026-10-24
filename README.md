@@ -22,6 +22,7 @@ Windows. The AI-quota module spun out of my internal AI usage monitor
 | Module | Resting pill | Hover island | Click menu |
 |---|---|---|---|
 | **Clock** | time | date | — |
+| **Calendar** | today's date | month grid with today highlighted | — |
 | **Media** (MPRIS) | animated equalizer while playing | artwork, track and artist | previous / play-pause / next |
 | **Focus timer** | countdown while active | countdown + progress | start work / break, or stop |
 | **Battery** | warning/charging indicator when relevant | percentage + bar | — |
@@ -31,11 +32,11 @@ Windows. The AI-quota module spun out of my internal AI usage monitor
 | **Idle eyes** | blink and glance when everything is calm | — | — |
 
 Hover opens a compact island capped at 500px wide (narrower on small
-monitors). An ambient halo and a bottom light strip tint themselves to the
-live activity — blue for the clock, amber for AI quota, green while music
-plays, with a breathing equalizer in the pill. ◀ ▶ and the labeled icon
-chooser move between Overview, Media, Focus, AI, Battery, Google Home,
-Hydration and Quick settings. Status pages
+monitors). A soft ambient halo and a thin bottom light strip tint themselves
+to the live activity — blue for the clock, amber for AI quota, green while
+music plays, with a breathing equalizer in the pill. ◀ ▶ and the labeled
+icon chooser move between Overview, Media, Focus, AI, Battery, Google Home,
+Calendar, Hydration and Quick settings. Status pages
 are read-only; the dedicated **⚙ Quick settings** page provides small module,
 style and width toggles. Track controls, focus start/stop, hydration logging,
 and device actions are in the click menu. The resting pill shows each AI
