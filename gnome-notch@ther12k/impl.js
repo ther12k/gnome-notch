@@ -152,6 +152,8 @@ const DEFAULT_CONFIG = {
         margin_top: 0,
         offset_x: 0,
         shape: 'notch',
+        sticky_mode: 'snap',
+        sticky_zone: 'center',
     },
     focus: { work_min: 25, break_min: 5 },
     water_goal_ml: 2000,
@@ -457,6 +459,7 @@ class NotchBar extends PanelMenu.Button {
         this._lastSig = null;
 
         this._clockLbl = null;
+        this._dragBadge = null;
         this._cdLabels = [];        // live countdown labels [{label, ms}]
         this._islandCd = [];        // island-page countdown labels
         this._islandPage = 0;       // which island activity page is shown
@@ -577,9 +580,8 @@ class NotchBar extends PanelMenu.Button {
             const [x, y] = event.get_coords();
             this._dragStartX = x;
             this._dragStartY = y;
-            const appCfg = this._app.cfg.appearance || {};
-            this._dragInitOffsetX = Number(appCfg.offset_x) || 0;
-            this._dragInitMarginTop = Number(appCfg.margin_top) || 0;
+            this._dragInitActorX = this.x;
+            this._dragInitActorY = this.y;
             this._dragCandidate = true;
             this._dragging = false;
             // raise notch above all siblings on click/drag
@@ -597,11 +599,12 @@ class NotchBar extends PanelMenu.Button {
                 this._cancelHoverTimers();
             }
             if (this._dragging) {
-                const appCfg = this._app.cfg.appearance = this._app.cfg.appearance || {};
-                appCfg.offset_x = Math.round(this._dragInitOffsetX + dx);
-                appCfg.margin_top = Math.max(0, Math.min(260, Math.round(this._dragInitMarginTop + dy)));
-                this._recenter();
-                this._applyPillStyle();
+                const curX = this._dragInitActorX + dx;
+                const curY = Math.max(0, this._dragInitActorY + dy);
+                const snap = this._getMagneticSnap(curX, curY);
+                this.set_position(curX, curY);
+                this._applyDraggingStyle(snap.zone);
+                this._showDragGuide(snap.zone);
                 return Clutter.EVENT_STOP;
             }
         }
@@ -610,9 +613,32 @@ class NotchBar extends PanelMenu.Button {
             if (this._dragging) {
                 this._dragging = false;
                 this._dragCandidate = false;
+                this._hideDragGuide();
+
+                const [curX, curY] = event.get_coords();
+                const rawX = this._dragInitActorX + (curX - this._dragStartX);
+                const rawY = Math.max(0, this._dragInitActorY + (curY - this._dragStartY));
+                const snap = this._getMagneticSnap(rawX, rawY);
+
+                const appCfg = this._app.cfg.appearance = this._app.cfg.appearance || {};
+                appCfg.offset_x = snap.offsetX;
+                appCfg.margin_top = snap.marginTop;
+                appCfg.shape = snap.marginTop > 0 ? 'pill' : 'notch';
+                appCfg.sticky_zone = snap.zone || 'custom';
                 this._app.cfgVersion++;
                 saveConfig(this._app.cfg);
-                this._recenter();
+
+                this._applyPillStyle();
+                this.ease({
+                    x: snap.x,
+                    y: snap.y,
+                    duration: snap.snapped ? 250 : 160,
+                    mode: snap.snapped ? Clutter.AnimationMode.EASE_OUT_BACK : Clutter.AnimationMode.EASE_OUT_QUAD,
+                    onStopped: () => {
+                        if (Main.layoutManager._queueUpdateRegions)
+                            Main.layoutManager._queueUpdateRegions();
+                    },
+                });
                 return Clutter.EVENT_STOP;
             }
             if (this._dragCandidate) {
@@ -796,6 +822,140 @@ class NotchBar extends PanelMenu.Button {
         this.set_position(targetX, targetY);
         if (Main.layoutManager._queueUpdateRegions)
             Main.layoutManager._queueUpdateRegions();
+    }
+
+    _applyDraggingStyle(zone) {
+        // Transparent glass when moving; illuminates in zone color when near a sticky spot
+        if (zone === 'left') {
+            this.set_style(
+                'background: rgba(13, 15, 19, 0.28); border-radius: 22px; ' +
+                'border: 2px solid #6fd9e8; box-shadow: 0 0 24px 4px rgba(111, 217, 232, 0.50); ' +
+                'opacity: 0.88;'
+            );
+        } else if (zone === 'right') {
+            this.set_style(
+                'background: rgba(13, 15, 19, 0.28); border-radius: 22px; ' +
+                'border: 2px solid #f5b455; box-shadow: 0 0 24px 4px rgba(245, 180, 85, 0.50); ' +
+                'opacity: 0.88;'
+            );
+        } else if (zone === 'center') {
+            this.set_style(
+                'background: rgba(13, 15, 19, 0.28); border-radius: 22px; ' +
+                'border: 2px solid #7ab8ff; box-shadow: 0 0 24px 4px rgba(122, 184, 255, 0.50); ' +
+                'opacity: 0.88;'
+            );
+        } else {
+            // Free / Custom position: transparent glass with soft dashed outline
+            this.set_style(
+                'background: rgba(13, 15, 19, 0.25); border-radius: 22px; ' +
+                'border: 1.5px dashed rgba(255, 255, 255, 0.45); box-shadow: 0 0 16px rgba(0, 0, 0, 0.40); ' +
+                'opacity: 0.78;'
+            );
+        }
+        if (this._ambGlow) this._ambGlow.opacity = 0;
+        if (this._lightStrip) this._lightStrip.opacity = 0;
+    }
+
+    _showDragGuide(zone) {
+        if (!this._dragBadge) {
+            this._dragBadge = new St.Label({
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            this._collapsedBox.add_child(this._dragBadge);
+        }
+        if (zone === 'left') {
+            this._dragBadge.text = '🧲 Snap: Left (Sticky)';
+            this._dragBadge.set_style(`${FONT}font-size: 11px; font-weight: 700; color: #6fd9e8; padding: 3px 10px; border-radius: 999px; background-color: rgba(15,17,23,0.92); border: 1px solid #6fd9e8; box-shadow: 0 0 12px rgba(111,217,232,0.5);`);
+        } else if (zone === 'right') {
+            this._dragBadge.text = '🧲 Snap: Right (Sticky)';
+            this._dragBadge.set_style(`${FONT}font-size: 11px; font-weight: 700; color: #f5b455; padding: 3px 10px; border-radius: 999px; background-color: rgba(15,17,23,0.92); border: 1px solid #f5b455; box-shadow: 0 0 12px rgba(245,180,85,0.5);`);
+        } else if (zone === 'center') {
+            this._dragBadge.text = '🧲 Snap: Center (Sticky)';
+            this._dragBadge.set_style(`${FONT}font-size: 11px; font-weight: 700; color: #7ab8ff; padding: 3px 10px; border-radius: 999px; background-color: rgba(15,17,23,0.92); border: 1px solid #7ab8ff; box-shadow: 0 0 12px rgba(122,184,255,0.5);`);
+        } else {
+            this._dragBadge.text = '📍 Custom Position';
+            this._dragBadge.set_style(`${FONT}font-size: 11px; font-weight: 700; color: rgba(232,234,237,0.7); padding: 3px 10px; border-radius: 999px; background-color: rgba(15,17,23,0.85); border: 1px solid rgba(255,255,255,0.15);`);
+        }
+    }
+
+    _hideDragGuide() {
+        if (this._dragBadge) {
+            this._dragBadge.destroy();
+            this._dragBadge = null;
+        }
+    }
+
+    _getMagneticSnap(curX, curY) {
+        const m = Main.layoutManager.primaryMonitor;
+        if (!m)
+            return { snapped: false, x: curX, y: curY, zone: null, offsetX: 0, marginTop: 0 };
+
+        const SNAP_DIST_X = 75; // magnetic distance threshold in pixels
+        const SNAP_DIST_Y = 20;
+
+        const leftX = m.x + 24;
+        const centerX = m.x + (m.width - this.width) / 2;
+        const rightX = m.x + m.width - this.width - 24;
+
+        let finalX = curX;
+        let finalY = curY;
+        let zone = null;
+
+        const distLeft = Math.abs(curX - leftX);
+        const distCenter = Math.abs(curX - centerX);
+        const distRight = Math.abs(curX - rightX);
+
+        if (distCenter < SNAP_DIST_X && distCenter <= distLeft && distCenter <= distRight) {
+            finalX = centerX;
+            zone = 'center';
+        } else if (distLeft < SNAP_DIST_X && distLeft <= distRight) {
+            finalX = leftX;
+            zone = 'left';
+        } else if (distRight < SNAP_DIST_X) {
+            finalX = rightX;
+            zone = 'right';
+        }
+
+        const distFlush = Math.abs(curY - m.y);
+        const distFloat = Math.abs(curY - (m.y + 8));
+        if (distFlush < SNAP_DIST_Y) {
+            finalY = m.y;
+        } else if (distFloat < SNAP_DIST_Y) {
+            finalY = m.y + 8;
+        }
+
+        return {
+            snapped: zone !== null,
+            x: Math.round(finalX),
+            y: Math.round(finalY),
+            zone,
+            marginTop: Math.max(0, Math.round(finalY - m.y)),
+            offsetX: Math.round(finalX - centerX),
+        };
+    }
+
+    _recenterAnimated(dur = 260) {
+        const m = Main.layoutManager.primaryMonitor;
+        if (!m)
+            return;
+        const appCfg = this._app.cfg.appearance || {};
+        const offsetX = Number(appCfg.offset_x) || 0;
+        const marginTop = Math.max(0, Number(appCfg.margin_top) || 0);
+        const minX = m.x + 8;
+        const maxX = m.x + m.width - this.width - 8;
+        const centerX = m.x + (m.width - this.width) / 2;
+        const targetX = Math.round(Math.max(minX, Math.min(maxX, centerX + offsetX)));
+        const targetY = Math.round(m.y + marginTop);
+        this.ease({
+            x: targetX,
+            y: targetY,
+            duration: dur,
+            mode: Clutter.AnimationMode.EASE_OUT_BACK,
+            onStopped: () => {
+                if (Main.layoutManager._queueUpdateRegions)
+                    Main.layoutManager._queueUpdateRegions();
+            },
+        });
     }
 
     /* ---------- expand / collapse ---------- */
@@ -1860,14 +2020,31 @@ class NotchBar extends PanelMenu.Button {
                                 this._applyCfg();
                             }));
                     });
-                posRow.add_child(this._textChoiceBtn('↔ Center',
-                    (Number((app.cfg.appearance || {}).offset_x) || 0) === 0,
-                    () => {
-                        app.cfg.appearance = app.cfg.appearance || {};
-                        app.cfg.appearance.offset_x = 0;
-                        this._applyCfg();
-                    }));
                 box.add_child(posRow);
+
+                // Sticky snap location (Left, Center, Right)
+                const curZone = (app.cfg.appearance || {}).sticky_zone || 'center';
+                const snapRow = new St.BoxLayout({ style: 'spacing: 6px;' });
+                [['⇱ Left', 'left'], ['↔ Center', 'center'], ['⇲ Right', 'right']]
+                    .forEach(([label, zone]) => {
+                        snapRow.add_child(this._textChoiceBtn(label,
+                            curZone === zone,
+                            () => {
+                                const m = Main.layoutManager.primaryMonitor;
+                                const centerX = m ? m.x + (m.width - this.width) / 2 : 0;
+                                let targetOff = 0;
+                                if (zone === 'left') targetOff = Math.round((m ? m.x + 24 : 24) - centerX);
+                                else if (zone === 'right') targetOff = Math.round((m ? m.x + m.width - this.width - 24 : 0) - centerX);
+                                app.cfg.appearance = app.cfg.appearance || {};
+                                app.cfg.appearance.offset_x = targetOff;
+                                app.cfg.appearance.sticky_zone = zone;
+                                this._app.cfgVersion++;
+                                saveConfig(this._app.cfg);
+                                this._recenterAnimated(260);
+                                this.render();
+                            }));
+                    });
+                box.add_child(snapRow);
 
                 const barRow = new St.BoxLayout({ style: 'spacing: 6px;' });
                 barRow.add_child(this._textChoiceBtn('🖥 Hide top bar',
@@ -2463,6 +2640,55 @@ class NotchBar extends PanelMenu.Button {
 
         const posSub = new PopupMenu.PopupSubMenuMenuItem('↕  Position & Margins');
         const curMargin = Number((app.cfg.appearance || {}).margin_top) || 0;
+        const curZone = (app.cfg.appearance || {}).sticky_zone || 'center';
+
+        const snapLeftItem = new PopupMenu.PopupMenuItem(
+            (curZone === 'left' ? '●  ' : '○  ') + '⇱  Snap: Top-Left (Sticky)');
+        snapLeftItem.connect('activate', () => {
+            const m = Main.layoutManager.primaryMonitor;
+            const centerX = m ? m.x + (m.width - this.width) / 2 : 0;
+            const leftX = m ? m.x + 24 : 24;
+            app.cfg.appearance = app.cfg.appearance || {};
+            app.cfg.appearance.offset_x = Math.round(leftX - centerX);
+            app.cfg.appearance.sticky_zone = 'left';
+            app.cfgVersion++;
+            saveConfig(app.cfg);
+            this._recenterAnimated(260);
+            this._buildMenu();
+        });
+        posSub.menu.addMenuItem(snapLeftItem);
+
+        const snapCenterItem = new PopupMenu.PopupMenuItem(
+            (curZone === 'center' ? '●  ' : '○  ') + '↔  Snap: Center (Sticky)');
+        snapCenterItem.connect('activate', () => {
+            app.cfg.appearance = app.cfg.appearance || {};
+            app.cfg.appearance.offset_x = 0;
+            app.cfg.appearance.sticky_zone = 'center';
+            app.cfgVersion++;
+            saveConfig(app.cfg);
+            this._recenterAnimated(260);
+            this._buildMenu();
+        });
+        posSub.menu.addMenuItem(snapCenterItem);
+
+        const snapRightItem = new PopupMenu.PopupMenuItem(
+            (curZone === 'right' ? '●  ' : '○  ') + '⇲  Snap: Top-Right (Sticky)');
+        snapRightItem.connect('activate', () => {
+            const m = Main.layoutManager.primaryMonitor;
+            const centerX = m ? m.x + (m.width - this.width) / 2 : 0;
+            const rightX = m ? m.x + m.width - this.width - 24 : 0;
+            app.cfg.appearance = app.cfg.appearance || {};
+            app.cfg.appearance.offset_x = Math.round(rightX - centerX);
+            app.cfg.appearance.sticky_zone = 'right';
+            app.cfgVersion++;
+            saveConfig(app.cfg);
+            this._recenterAnimated(260);
+            this._buildMenu();
+        });
+        posSub.menu.addMenuItem(snapRightItem);
+
+        posSub.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
         [['Flush top (0px)', 0], ['Float (8px)', 8], ['Float (14px)', 14], ['Float (20px)', 20]]
             .forEach(([label, px]) => {
                 const item = new PopupMenu.PopupMenuItem(
@@ -2473,22 +2699,12 @@ class NotchBar extends PanelMenu.Button {
                     app.cfg.appearance.shape = px > 0 ? 'pill' : 'notch';
                     app.cfgVersion++;
                     saveConfig(app.cfg);
-                    this._recenter();
+                    this._recenterAnimated(200);
                     this._applyPillStyle();
                     this._buildMenu();
                 });
                 posSub.menu.addMenuItem(item);
             });
-        const centerItem = new PopupMenu.PopupMenuItem('↔  Center horizontally');
-        centerItem.connect('activate', () => {
-            app.cfg.appearance = app.cfg.appearance || {};
-            app.cfg.appearance.offset_x = 0;
-            app.cfgVersion++;
-            saveConfig(app.cfg);
-            this._recenter();
-            this._buildMenu();
-        });
-        posSub.menu.addMenuItem(centerItem);
         this.menu.addMenuItem(posSub);
 
         const pillSw = new PopupMenu.PopupSwitchMenuItem('✦  AI chips in pill',

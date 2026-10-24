@@ -49,12 +49,14 @@ account's chip with its own bar and reset countdown; the AI page repeats them
 with fuller detail. Click the pill for actions and the full settings menu:
 toggle **🧩 Modules**, pick a **🎨 Pill style** — glass droplet (glow border,
 default), flat pill, outline or mist — choose **↔ Pill width** (compact / regular /
-wide), adjust **↕ Position & Margins** (flush 0px or floating 8px/14px/20px, center),
-or simply **click and drag the notch** anywhere across the top of your screen to move it.
+wide), adjust **↕ Position & Margins** (flush 0px or floating 8px/14px/20px, sticky snap Left/Center/Right),
+or simply **click and drag the notch** to move it: while moving, the notch turns transparent
+with a sleek glowing outline and displays live magnetic indicators (`🧲 Snap Left`, `🧲 Snap Center`, `🧲 Snap Right`)
+when near a sticky area; anywhere else keeps your exact custom placement.
 Settings live in
 `~/.config/gnome-notch/config.json` (`appearance.preset`, `appearance.min_width`,
 `appearance.hide_panel`, `appearance.margin_top`, `appearance.offset_x`, `appearance.shape`,
-`status_strip.battery/temp/ram`).
+`appearance.sticky_zone`, `status_strip.battery/temp/ram`).
 Setting `appearance.hide_panel` to `true` (or the **🖥 Hide top bar** button on
 the ⚙ page) hides the GNOME top bar entirely so the notch is the only thing
 left at the top — the panel returns when the option is switched off or the
