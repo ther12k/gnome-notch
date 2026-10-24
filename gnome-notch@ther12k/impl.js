@@ -964,12 +964,12 @@ class NotchBar extends PanelMenu.Button {
             }));
         }
 
-        if (mode !== 'battery' && !aiMode && mods.battery && st.battery &&
-            (batteryCharging || batteryLow)) {
+        if (mode !== 'battery' && st.battery &&
+            (app.cfg.appearance.hide_panel || batteryCharging || batteryLow)) {
             chips.add_child(new St.Label({
                 text: `${batteryCharging ? '⚡' : '🔋'} ${st.battery.pct}%`,
                 y_align: Clutter.ActorAlign.CENTER,
-                style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${batteryLow ? T.warn : T.ok};`,
+                style: `${FONT}font-size: 11.5px; font-weight: 700; color: ${batteryLow ? T.warn : (st.battery.pct >= 95 ? T.ok : T.text)};`,
             }));
         }
 
@@ -1132,13 +1132,13 @@ class NotchBar extends PanelMenu.Button {
         const app = this._app;
         const st = app.state;
         const cfg = app.cfg.status_strip || {};
-        const mods = app.cfg.modules;
         const bits = [];
-        if (cfg.battery !== false && mods.battery && st.battery) {
+        if (cfg.battery !== false && st.battery) {
             const low = !st.battery.charging && st.battery.pct <= 20;
+            const full = st.battery.pct >= 95;
             bits.push({
                 text: `${st.battery.charging ? '⚡' : '🔋'} ${st.battery.pct}%`,
-                color: low ? T.err : T.ok,
+                color: low ? T.err : (full ? T.ok : T.text),
             });
         }
         if (cfg.temp !== false && st.sys && st.sys.temp_c !== null &&
@@ -1146,21 +1146,23 @@ class NotchBar extends PanelMenu.Button {
             const t = st.sys.temp_c;
             bits.push({
                 text: `🌡 ${Math.round(t)}°C`,
-                color: t >= 90 ? T.err : (t >= 80 ? T.warn : T.muted),
+                color: t >= 85 ? T.err : (t >= 75 ? T.warn : T.ok),
             });
         }
         if (cfg.ram !== false && st.sys && st.sys.ram_pct !== null &&
             st.sys.ram_pct !== undefined) {
             const r = st.sys.ram_pct;
             bits.push({
-                text: `RAM ${Math.round(r)}%`,
-                color: r >= 90 ? T.warn : T.muted,
+                text: `🧠 ${Math.round(r)}%`,
+                color: r >= 90 ? T.err : (r >= 75 ? T.warn : T.ok),
             });
         }
         if (bits.length < 1)
             return null;
         const box = new St.BoxLayout({
-            style: 'spacing: 8px;',
+            style: 'spacing: 12px; margin-top: 6px; padding: 4px 16px; ' +
+                'border-radius: 999px; background-color: rgba(255, 255, 255, 0.06); ' +
+                'border: 1px solid rgba(255, 255, 255, 0.08);',
             x_align: Clutter.ActorAlign.CENTER,
             y_align: Clutter.ActorAlign.CENTER,
         });
@@ -1174,7 +1176,7 @@ class NotchBar extends PanelMenu.Button {
             box.add_child(new St.Label({
                 text: b.text,
                 y_align: Clutter.ActorAlign.CENTER,
-                style: `${FONT}font-size: 10.5px; font-weight: 700; color: ${b.color};` +
+                style: `${FONT}font-size: 11px; font-weight: 700; color: ${b.color};` +
                     'font-variant-numeric: tabular-nums;',
             }));
         });
@@ -1955,6 +1957,34 @@ class NotchBar extends PanelMenu.Button {
         pillSw.connect('toggled', (_, val) => app.setPillMode(val ? 'ai' : 'clock'));
         this.menu.addMenuItem(pillSw);
 
+        const hideBarSw = new PopupMenu.PopupSwitchMenuItem('🖥  Hide GNOME top bar',
+            !!((app.cfg.appearance || {}).hide_panel));
+        hideBarSw.connect('toggled', (_, val) => {
+            app.cfg.appearance = app.cfg.appearance || {};
+            app.cfg.appearance.hide_panel = val;
+            app.cfgVersion++;
+            saveConfig(app.cfg);
+            app.applyHidePanel();
+            this.render();
+        });
+        this.menu.addMenuItem(hideBarSw);
+
+        const stripSub = new PopupMenu.PopupSubMenuMenuItem('📊  Status strip');
+        const stripCfg = app.cfg.status_strip ||
+            (app.cfg.status_strip = { battery: true, temp: true, ram: true });
+        [['battery', '🔋 Battery'], ['temp', '🌡 CPU temperature'], ['ram', '🧠 RAM usage']]
+            .forEach(([key, label]) => {
+                const sw = new PopupMenu.PopupSwitchMenuItem(label, stripCfg[key] !== false);
+                sw.connect('toggled', (_, v) => {
+                    stripCfg[key] = v;
+                    app.cfgVersion++;
+                    saveConfig(app.cfg);
+                    this.render();
+                });
+                stripSub.menu.addMenuItem(sw);
+            });
+        this.menu.addMenuItem(stripSub);
+
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
         const cfgItem = new PopupMenu.PopupMenuItem('📝  Open settings file');
@@ -2101,18 +2131,26 @@ class NotchApp {
             const dir = Gio.File.new_for_path('/sys/class/thermal');
             const names = dir.enumerate_children('standard::name',
                 Gio.FileQueryInfoFlags.NONE, null);
-            let info, best = null;
+            let info, cpuTemp = null, maxTemp = null;
             while ((info = names.next_file(null))) {
                 const n = info.get_name();
                 if (!n.startsWith('thermal_zone'))
                     continue;
-                const t = parseFloat(this._readSys(`/sys/class/thermal/${n}/temp`));
-                if (!Number.isNaN(t) && (best === null || t > best))
-                    best = t;
+                const raw = this._readSys(`/sys/class/thermal/${n}/temp`);
+                const type = (this._readSys(`/sys/class/thermal/${n}/type`) || '').toLowerCase();
+                const t = parseFloat(raw);
+                if (Number.isNaN(t) || t <= 0)
+                    continue;
+                const deg = t > 1000 ? t / 1000 : t;
+                if (deg > 115)
+                    continue;
+                if (type.includes('pkg') || type.includes('tcpu') || type.includes('core'))
+                    cpuTemp = deg;
+                else if (maxTemp === null || deg > maxTemp)
+                    maxTemp = deg;
             }
             names.close(null);
-            if (best !== null)
-                s.temp_c = best / 1000;
+            s.temp_c = cpuTemp !== null ? cpuTemp : maxTemp;
         } catch (e) { /* no thermal zones */ }
         this.state.sys = s;
         this._notch && this._notch.render();
@@ -2126,15 +2164,21 @@ class NotchApp {
             return;
         try {
             if (want) {
-                this._panelSavedH = panelBox.height;
+                this._panelSavedH = panelBox.height || 32;
                 panelBox.hide();
                 panelBox.set_size(panelBox.width, 0);
+                if (Main.panel)
+                    Main.panel.hide();
             } else {
                 panelBox.show();
+                if (Main.panel)
+                    Main.panel.show();
                 if (this._panelSavedH)
                     panelBox.set_size(panelBox.width, this._panelSavedH);
             }
-            if (Main.layoutManager._updateWorkArea)
+            if (Main.layoutManager._queueUpdateRegions)
+                Main.layoutManager._queueUpdateRegions();
+            else if (Main.layoutManager._updateWorkArea)
                 Main.layoutManager._updateWorkArea();
             this._panelHidden = want;
         } catch (e) {
@@ -2152,7 +2196,11 @@ class NotchApp {
                 if (this._panelSavedH)
                     panelBox.set_size(panelBox.width, this._panelSavedH);
             }
-            if (Main.layoutManager._updateWorkArea)
+            if (Main.panel)
+                Main.panel.show();
+            if (Main.layoutManager._queueUpdateRegions)
+                Main.layoutManager._queueUpdateRegions();
+            else if (Main.layoutManager._updateWorkArea)
                 Main.layoutManager._updateWorkArea();
         } catch (e) { /* best effort */ }
         this._panelHidden = false;
@@ -2182,7 +2230,7 @@ class NotchApp {
             if (pct !== null) {
                 this.state.battery = {
                     pct: parseInt(pct, 10),
-                    charging: status === 'Charging',
+                    charging: status === 'Charging' || status === 'Full',
                 };
                 this._notch && this._notch.render();
             }
