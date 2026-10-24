@@ -141,7 +141,14 @@ const DEFAULT_CONFIG = {
     },
     clock_24h: true,
     pill_mode: 'ai',            // 'ai' = GLM chips like aiacctool, 'clock' = clock-first
-    appearance: { preset: 'glass', min_width: 260, hide_panel: false },
+    appearance: {
+        preset: 'glass',
+        min_width: 260,
+        hide_panel: false,
+        margin_top: 0,
+        offset_x: 0,
+        shape: 'notch',
+    },
     focus: { work_min: 25, break_min: 5 },
     water_goal_ml: 2000,
     water: { date: '', ml: 0 },
@@ -431,6 +438,8 @@ class NotchBar extends PanelMenu.Button {
         if (this.container && this.get_parent() === this.container)
             this.container.child = null;
         Main.layoutManager.addChrome(this, { affectsInputRegion: true });
+        if (this.get_parent())
+            this.get_parent().set_child_above_sibling(this, null);
         if (Main.panel.menuManager)
             Main.panel.menuManager.addMenu(this.menu);
         this._monChangedId = Main.layoutManager.connect('monitors-changed', () => this._syncMetrics());
@@ -459,10 +468,58 @@ class NotchBar extends PanelMenu.Button {
     }
 
     vfunc_event(event) {
-        // PanelMenu.Button toggles the menu on BUTTON_PRESS; sprout the
-        // island first so the menu anchors to the expanded size.
-        if (event.type() === Clutter.EventType.BUTTON_PRESS)
-            this._expand();
+        const type = event.type();
+        if (type === Clutter.EventType.BUTTON_PRESS && event.get_button() === 1) {
+            const [x, y] = event.get_coords();
+            this._dragStartX = x;
+            this._dragStartY = y;
+            const appCfg = this._app.cfg.appearance || {};
+            this._dragInitOffsetX = Number(appCfg.offset_x) || 0;
+            this._dragInitMarginTop = Number(appCfg.margin_top) || 0;
+            this._dragCandidate = true;
+            this._dragging = false;
+            // raise notch above all siblings on click/drag
+            if (this.get_parent())
+                this.get_parent().set_child_above_sibling(this, null);
+            return Clutter.EVENT_STOP;
+        }
+
+        if (type === Clutter.EventType.MOTION && this._dragCandidate) {
+            const [x, y] = event.get_coords();
+            const dx = x - this._dragStartX;
+            const dy = y - this._dragStartY;
+            if (!this._dragging && Math.hypot(dx, dy) > 5) {
+                this._dragging = true;
+                this._cancelHoverTimers();
+            }
+            if (this._dragging) {
+                const appCfg = this._app.cfg.appearance = this._app.cfg.appearance || {};
+                appCfg.offset_x = Math.round(this._dragInitOffsetX + dx);
+                appCfg.margin_top = Math.max(0, Math.min(260, Math.round(this._dragInitMarginTop + dy)));
+                this._recenter();
+                this._applyPillStyle();
+                return Clutter.EVENT_STOP;
+            }
+        }
+
+        if (type === Clutter.EventType.BUTTON_RELEASE && event.get_button() === 1) {
+            if (this._dragging) {
+                this._dragging = false;
+                this._dragCandidate = false;
+                this._app.cfgVersion++;
+                saveConfig(this._app.cfg);
+                this._recenter();
+                return Clutter.EVENT_STOP;
+            }
+            if (this._dragCandidate) {
+                this._dragCandidate = false;
+                // Click without drag: sprout island and toggle menu
+                this._expand();
+                this.menu.toggle();
+                return Clutter.EVENT_STOP;
+            }
+        }
+
         return super.vfunc_event(event);
     }
 
@@ -624,7 +681,17 @@ class NotchBar extends PanelMenu.Button {
         const m = Main.layoutManager.primaryMonitor;
         if (!m)
             return;
-        this.set_position(Math.round(m.x + (m.width - this.width) / 2), 0);
+        const appCfg = this._app.cfg.appearance || {};
+        const offsetX = Number(appCfg.offset_x) || 0;
+        const marginTop = Math.max(0, Number(appCfg.margin_top) || 0);
+        const minX = m.x + 8;
+        const maxX = m.x + m.width - this.width - 8;
+        const centerX = m.x + (m.width - this.width) / 2;
+        const targetX = Math.round(Math.max(minX, Math.min(maxX, centerX + offsetX)));
+        const targetY = Math.round(m.y + marginTop);
+        this.set_position(targetX, targetY);
+        if (Main.layoutManager._queueUpdateRegions)
+            Main.layoutManager._queueUpdateRegions();
     }
 
     /* ---------- expand / collapse ---------- */
@@ -725,10 +792,19 @@ class NotchBar extends PanelMenu.Button {
     }
 
     _applyPillStyle() {
-        const preset = PILL_STYLES[(this._app.cfg.appearance || {}).preset] ||
-            PILL_STYLES.glass;
-        this.set_style(this._alert ? preset.alert
-            : (this._hovered ? preset.hover : preset.base));
+        const appCfg = this._app.cfg.appearance || {};
+        const preset = PILL_STYLES[appCfg.preset] || PILL_STYLES.glass;
+        let s = this._alert ? preset.alert
+            : (this._hovered ? preset.hover : preset.base);
+        const marginTop = Math.max(0, Number(appCfg.margin_top) || 0);
+        const shape = appCfg.shape || (marginTop > 0 ? 'pill' : 'notch');
+        if (shape === 'pill' || marginTop > 0) {
+            s = s.replace(/border-radius:\s*0px 0px 22px 22px;?/g, 'border-radius: 22px;')
+                 .replace(/border-radius:\s*0px 0px 20px 20px;?/g, 'border-radius: 20px;')
+                 .replace(/border-radius:\s*0px 0px 26px 26px;?/g, 'border-radius: 26px;')
+                 .replace(/border-top-width:\s*0px;?/g, '');
+        }
+        this.set_style(s);
     }
 
     /* ---------- rendering ---------- */
@@ -1599,7 +1675,7 @@ class NotchBar extends PanelMenu.Button {
                     });
                 box.add_child(widthRow);
 
-                // status strip (battery · temp · ram) + top-bar removal
+                // status strip (battery · temp · ram)
                 const stripCfg = app.cfg.status_strip ||
                     (app.cfg.status_strip = { battery: true, temp: true, ram: true });
                 const stripRow = new St.BoxLayout({ style: 'spacing: 6px;' });
@@ -1613,6 +1689,29 @@ class NotchBar extends PanelMenu.Button {
                             }));
                     });
                 box.add_child(stripRow);
+
+                // Margin top / shape
+                const curM = Number((app.cfg.appearance || {}).margin_top) || 0;
+                const posRow = new St.BoxLayout({ style: 'spacing: 6px;' });
+                [['Flush 0px', 0], ['Float 8px', 8], ['Float 14px', 14]]
+                    .forEach(([name, px]) => {
+                        posRow.add_child(this._textChoiceBtn(name,
+                            curM === px,
+                            () => {
+                                app.cfg.appearance = app.cfg.appearance || {};
+                                app.cfg.appearance.margin_top = px;
+                                app.cfg.appearance.shape = px > 0 ? 'pill' : 'notch';
+                                this._applyCfg();
+                            }));
+                    });
+                posRow.add_child(this._textChoiceBtn('↔ Center',
+                    (Number((app.cfg.appearance || {}).offset_x) || 0) === 0,
+                    () => {
+                        app.cfg.appearance = app.cfg.appearance || {};
+                        app.cfg.appearance.offset_x = 0;
+                        this._applyCfg();
+                    }));
+                box.add_child(posRow);
 
                 const barRow = new St.BoxLayout({ style: 'spacing: 6px;' });
                 barRow.add_child(this._textChoiceBtn('🖥 Hide top bar',
@@ -2001,6 +2100,36 @@ class NotchBar extends PanelMenu.Button {
             });
         this.menu.addMenuItem(widthSub);
 
+        const posSub = new PopupMenu.PopupSubMenuMenuItem('↕  Position & Margins');
+        const curMargin = Number((app.cfg.appearance || {}).margin_top) || 0;
+        [['Flush top (0px)', 0], ['Float (8px)', 8], ['Float (14px)', 14], ['Float (20px)', 20]]
+            .forEach(([label, px]) => {
+                const item = new PopupMenu.PopupMenuItem(
+                    (curMargin === px ? '●  ' : '○  ') + label);
+                item.connect('activate', () => {
+                    app.cfg.appearance = app.cfg.appearance || {};
+                    app.cfg.appearance.margin_top = px;
+                    app.cfg.appearance.shape = px > 0 ? 'pill' : 'notch';
+                    app.cfgVersion++;
+                    saveConfig(app.cfg);
+                    this._recenter();
+                    this._applyPillStyle();
+                    this._buildMenu();
+                });
+                posSub.menu.addMenuItem(item);
+            });
+        const centerItem = new PopupMenu.PopupMenuItem('↔  Center horizontally');
+        centerItem.connect('activate', () => {
+            app.cfg.appearance = app.cfg.appearance || {};
+            app.cfg.appearance.offset_x = 0;
+            app.cfgVersion++;
+            saveConfig(app.cfg);
+            this._recenter();
+            this._buildMenu();
+        });
+        posSub.menu.addMenuItem(centerItem);
+        this.menu.addMenuItem(posSub);
+
         const pillSw = new PopupMenu.PopupSwitchMenuItem('✦  AI chips in pill',
             app.cfg.pill_mode !== 'clock');
         pillSw.connect('toggled', (_, val) => app.setPillMode(val ? 'ai' : 'clock'));
@@ -2223,19 +2352,30 @@ class NotchApp {
     applyHidePanel() {
         const want = !!((this.cfg.appearance || {}).hide_panel);
         const panelBox = Main.layoutManager.panelBox;
-        if (!panelBox || want === this._panelHidden)
+        if (!panelBox)
             return;
         try {
             if (want) {
                 this._panelSavedH = panelBox.height || 32;
+                panelBox.translation_y = -Math.max(100, (panelBox.height || 32) + 20);
+                panelBox.opacity = 0;
+                panelBox.reactive = false;
                 panelBox.hide();
-                panelBox.set_size(panelBox.width, 0);
-                if (Main.panel)
+                if (Main.panel) {
+                    Main.panel.opacity = 0;
+                    Main.panel.reactive = false;
                     Main.panel.hide();
+                }
             } else {
+                panelBox.translation_y = 0;
+                panelBox.opacity = 255;
+                panelBox.reactive = true;
                 panelBox.show();
-                if (Main.panel)
+                if (Main.panel) {
+                    Main.panel.opacity = 255;
+                    Main.panel.reactive = true;
                     Main.panel.show();
+                }
                 if (this._panelSavedH)
                     panelBox.set_size(panelBox.width, this._panelSavedH);
             }
@@ -2255,12 +2395,18 @@ class NotchApp {
         try {
             const panelBox = Main.layoutManager.panelBox;
             if (panelBox) {
+                panelBox.translation_y = 0;
+                panelBox.opacity = 255;
+                panelBox.reactive = true;
                 panelBox.show();
                 if (this._panelSavedH)
                     panelBox.set_size(panelBox.width, this._panelSavedH);
             }
-            if (Main.panel)
+            if (Main.panel) {
+                Main.panel.opacity = 255;
+                Main.panel.reactive = true;
                 Main.panel.show();
+            }
             if (Main.layoutManager._queueUpdateRegions)
                 Main.layoutManager._queueUpdateRegions();
             else if (Main.layoutManager._updateWorkArea)
