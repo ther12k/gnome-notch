@@ -472,8 +472,8 @@ function getNetworkStatus(cb) {
         proc.communicate_utf8_async(null, null, (obj, res) => {
             try {
                 const [ok, stdout] = proc.communicate_utf8_finish(res);
+                let connected = false, ssid = '', type = 'none';
                 if (ok && stdout) {
-                    let connected = false, ssid = '', type = 'none';
                     for (const line of stdout.split('\n')) {
                         const parts = line.split(':');
                         if (parts[1] && parts[1].startsWith('connected') && parts[0] === 'wifi') {
@@ -487,8 +487,33 @@ function getNetworkStatus(cb) {
                             ssid = parts[2] || 'Wired';
                         }
                     }
-                    cb({ connected, ssid, type });
                 }
+                const proc2 = new Gio.Subprocess({
+                    argv: ['nmcli', '-t', '-f', 'IN-USE,SSID,SIGNAL', 'dev', 'wifi'],
+                    flags: Gio.SubprocessFlags.STDOUT_PIPE,
+                });
+                proc2.init(null);
+                proc2.communicate_utf8_async(null, null, (obj2, res2) => {
+                    const wifiList = [];
+                    const seen = new Set();
+                    try {
+                        const [ok2, stdout2] = proc2.communicate_utf8_finish(res2);
+                        if (ok2 && stdout2) {
+                            for (const l of stdout2.split('\n')) {
+                                const p = l.split(':');
+                                if (p.length >= 3 && p[1] && !seen.has(p[1])) {
+                                    seen.add(p[1]);
+                                    wifiList.push({
+                                        ssid: p[1],
+                                        active: p[0] === '*',
+                                        signal: parseInt(p[2], 10) || 50,
+                                    });
+                                }
+                            }
+                        }
+                    } catch (e) {}
+                    cb({ connected, ssid, type, networks: wifiList.slice(0, 8) });
+                });
             } catch (e) {}
         });
     } catch (e) {}
@@ -496,6 +521,10 @@ function getNetworkStatus(cb) {
 
 function setWifiEnabled(enabled) {
     Util_spawn(`nmcli radio wifi ${enabled ? 'on' : 'off'}`);
+}
+
+function connectWifi(ssid) {
+    Util_spawn(`nmcli dev wifi connect "${ssid}" || nmcli con up "${ssid}"`);
 }
 
 function getBluetoothStatus(cb) {
@@ -508,25 +537,52 @@ function getBluetoothStatus(cb) {
         proc.communicate_utf8_async(null, null, (obj, res) => {
             try {
                 const [ok, stdout] = proc.communicate_utf8_finish(res);
-                if (ok && stdout) {
-                    const powered = stdout.includes('Powered: yes');
-                    const proc2 = new Gio.Subprocess({
-                        argv: ['bluetoothctl', 'devices', 'Connected'],
+                const powered = ok && stdout && stdout.includes('Powered: yes');
+                const proc2 = new Gio.Subprocess({
+                    argv: ['bluetoothctl', 'devices', 'Connected'],
+                    flags: Gio.SubprocessFlags.STDOUT_PIPE,
+                });
+                proc2.init(null);
+                proc2.communicate_utf8_async(null, null, (obj2, res2) => {
+                    let connectedOutput = '';
+                    try {
+                        const [ok2, stdout2] = proc2.communicate_utf8_finish(res2);
+                        if (ok2 && stdout2)
+                            connectedOutput = stdout2;
+                    } catch (e) {}
+
+                    const proc3 = new Gio.Subprocess({
+                        argv: ['bluetoothctl', 'devices', 'Paired'],
                         flags: Gio.SubprocessFlags.STDOUT_PIPE,
                     });
-                    proc2.init(null);
-                    proc2.communicate_utf8_async(null, null, (obj2, res2) => {
-                        let devName = '';
+                    proc3.init(null);
+                    proc3.communicate_utf8_async(null, null, (obj3, res3) => {
+                        const devList = [];
+                        let firstConnectedName = '';
                         try {
-                            const [ok2, stdout2] = proc2.communicate_utf8_finish(res2);
-                            if (ok2 && stdout2 && stdout2.trim()) {
-                                const m = stdout2.trim().match(/^Device\s+\S+\s+(.+)$/m);
-                                if (m) devName = m[1].trim();
+                            const [ok3, stdout3] = proc3.communicate_utf8_finish(res3);
+                            if (ok3 && stdout3) {
+                                for (const l of stdout3.split('\n')) {
+                                    const m = l.match(/^Device\s+([0-9A-Fa-f:]+)\s+(.+)$/);
+                                    if (m) {
+                                        const mac = m[1];
+                                        const name = m[2].trim();
+                                        const isConn = connectedOutput.includes(mac);
+                                        if (isConn && !firstConnectedName)
+                                            firstConnectedName = name;
+                                        devList.push({ mac, name, connected: isConn });
+                                    }
+                                }
                             }
                         } catch (e) {}
-                        cb({ powered, connected: !!devName, device: devName });
+                        cb({
+                            powered,
+                            connected: !!firstConnectedName,
+                            device: firstConnectedName,
+                            devices: devList.slice(0, 10),
+                        });
                     });
-                }
+                });
             } catch (e) {}
         });
     } catch (e) {}
@@ -534,6 +590,14 @@ function getBluetoothStatus(cb) {
 
 function setBluetoothPowered(powered) {
     Util_spawn(`bluetoothctl power ${powered ? 'on' : 'off'}`);
+}
+
+function connectBluetooth(mac) {
+    Util_spawn(`bluetoothctl connect ${mac}`);
+}
+
+function disconnectBluetooth(mac) {
+    Util_spawn(`bluetoothctl disconnect ${mac}`);
 }
 
 function toggleDarkMode() {
@@ -1479,7 +1543,7 @@ class NotchBar extends PanelMenu.Button {
                 y_align: Clutter.ActorAlign.CENTER,
             });
             netBtn.set_accessible_name(connected ? `Network: ${st.net.ssid}` : 'Network: Disconnected');
-            netBtn.connect('clicked', () => actionSettings('wifi'));
+            netBtn.connect('clicked', () => this._openIslandKind('network'));
             this._pillNetBtn = netBtn;
             rightGroup.add_child(netBtn);
         }
@@ -1497,7 +1561,7 @@ class NotchBar extends PanelMenu.Button {
                 y_align: Clutter.ActorAlign.CENTER,
             });
             btBtn.set_accessible_name(connected ? `Bluetooth: ${st.bt.device}` : (on ? 'Bluetooth: On' : 'Bluetooth: Off'));
-            btBtn.connect('clicked', () => actionSettings('bluetooth'));
+            btBtn.connect('clicked', () => this._openIslandKind('network'));
             this._pillBtBtn = btBtn;
             rightGroup.add_child(btBtn);
         }
@@ -2427,6 +2491,18 @@ class NotchBar extends PanelMenu.Button {
         this._showIslandPage(idx, idx > this._islandPage ? 1 : -1);
     }
 
+    _openIslandKind(kind) {
+        this._islandKind = kind;
+        const pages = this._islandPages();
+        const idx = pages.findIndex(p => p.kind === kind);
+        if (idx >= 0)
+            this._islandPage = idx;
+        if (!this._expanded)
+            this._expand();
+        else
+            this._showIslandPage(idx >= 0 ? idx : 0, 1);
+    }
+
     // apply an appearance change made from the config page and re-render
     _applyCfg() {
         this._app.cfgVersion++;
@@ -2726,21 +2802,21 @@ class NotchBar extends PanelMenu.Button {
 
         // Top-bar Quick Settings icons: Wi-Fi, Bluetooth, Dark Mode, Screenshot, Settings, Lock, Power
         const netConnected = !!(st.net && st.net.connected);
-        const netName = st.net && st.net.ssid ? `Wi-Fi: ${st.net.ssid}` : 'Network Settings';
+        const netName = st.net && st.net.ssid ? `Wi-Fi: ${st.net.ssid}` : 'Network & Bluetooth';
         actionRow.add_child(this._actionIconBtn(
             netConnected ? '📶' : '📵',
             netName,
-            () => actionSettings('wifi'),
+            () => this._openIslandKind('network'),
             netConnected ? '#3fd68f' : T.muted
         ));
 
         const btConnected = !!(st.bt && st.bt.connected);
         const btOn = !!(st.bt && st.bt.powered);
-        const btName = st.bt && st.bt.device ? `Bluetooth: ${st.bt.device}` : (btOn ? 'Bluetooth: On' : 'Bluetooth Settings');
+        const btName = st.bt && st.bt.device ? `Bluetooth: ${st.bt.device}` : (btOn ? 'Bluetooth: On' : 'Bluetooth Devices');
         actionRow.add_child(this._actionIconBtn(
             'ᛒ',
             btName,
-            () => actionSettings('bluetooth'),
+            () => this._openIslandKind('network'),
             btConnected ? '#7ab8ff' : (btOn ? T.text : T.muted)
         ));
 
@@ -2882,6 +2958,23 @@ class NotchBar extends PanelMenu.Button {
             const low = !b.charging && b.pct <= 20;
             this._pillBatLbl.text = `${b.charging ? '⚡' : '🔋'} ${b.pct}%`;
             this._pillBatLbl.set_style(`${FONT}font-size: 11.5px; font-weight: 700; color: ${low ? T.err : (b.charging ? T.ok : T.text)}; font-variant-numeric: tabular-nums;`);
+        }
+        if (this._pillNetBtn && this._app.state.net) {
+            const net = this._app.state.net;
+            const connected = !!net.connected;
+            this._pillNetBtn.label = connected
+                ? (net.type === 'wifi' ? `📶 ${net.ssid ? _trunc(net.ssid, 10) : ''}`.trim() : '🖧')
+                : '📵';
+            this._pillNetBtn.set_style(`${FONT}font-size: 11px; font-weight: 700; color: ${connected ? '#3fd68f' : T.muted}; padding: 2px 6px; border-radius: 6px; background-color: rgba(255,255,255,0.06);`);
+        }
+        if (this._pillBtBtn && this._app.state.bt) {
+            const bt = this._app.state.bt;
+            const on = !!bt.powered;
+            const connected = !!bt.connected;
+            this._pillBtBtn.label = connected
+                ? `ᛒ ${bt.device ? _trunc(bt.device, 8) : ''}`.trim()
+                : 'ᛒ';
+            this._pillBtBtn.set_style(`${FONT}font-size: 11px; font-weight: 700; color: ${connected ? '#7ab8ff' : (on ? T.text : T.muted)}; padding: 2px 6px; border-radius: 6px; background-color: rgba(255,255,255,0.06);`);
         }
         if (this._focusPillLbl)
             this._focusPillLbl.text = this._app.focusClockText();
