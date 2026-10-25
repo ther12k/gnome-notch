@@ -194,6 +194,12 @@ h1{
 .media-meta{display:flex;flex-direction:column;gap:2px;min-width:0}
 .media-meta .track{max-width:260px}
 .media-source{color:var(--ok);font-size:10.5px;font-weight:700;display:flex;align-items:center;gap:7px}
+/* media player controls */
+.media-ctls{display:flex;align-items:center;gap:5px;margin-left:auto}
+.mctl-btn{font:inherit;font-size:13px;width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);color:var(--text);display:grid;place-items:center;cursor:pointer;transition:all .15s}
+.mctl-btn:hover{background:rgba(255,255,255,.18);color:#fff;box-shadow:0 0 8px rgba(255,255,255,.25)}
+.mctl-btn.play{width:34px;height:34px;border-radius:10px;font-size:14px;background:rgba(63,214,143,.22);border-color:rgba(63,214,143,.6);color:var(--ok);box-shadow:0 0 10px rgba(63,214,143,.35)}
+.mctl-btn.play:hover{background:rgba(63,214,143,.35);box-shadow:0 0 14px rgba(63,214,143,.5)}
 /* live equalizer while a track plays */
 .eq{display:inline-flex;gap:2px;align-items:flex-end;height:12px}
 .eq i{width:3px;height:12px;border-radius:2px;background:var(--ok);box-shadow:0 0 6px rgba(63,214,143,.6);transform-origin:bottom;animation:eq 1s ease-in-out infinite}
@@ -466,13 +472,18 @@ footer a:hover{color:var(--text)}
                   </div>
                   <div class="pg" data-kind="media" hidden>
                     <div class="media-preview">
-    <div class="media-art" aria-hidden="true">◉</div>
-    <div class="media-meta">
-      <div class="sub media-source"><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>▶  Spotify</div>
-      <div class="irow big"><span class="track">Middleware</span></div>
-      <div class="sub">Overmono</div>
-    </div>
-  </div>
+                      <div class="media-art" aria-hidden="true">◉</div>
+                      <div class="media-meta">
+                        <div class="sub media-source"><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>▶  Spotify</div>
+                        <div class="irow big"><span class="track">Middleware</span></div>
+                        <div class="sub">Overmono</div>
+                      </div>
+                      <div class="media-ctls">
+                        <button class="mctl-btn" title="Previous track">⏮</button>
+                        <button class="mctl-btn play" id="demoPlayBtn" title="Play / Pause">⏸</button>
+                        <button class="mctl-btn" title="Next track">⏭</button>
+                      </div>
+                    </div>
                   </div>
                   <div class="pg" data-kind="ai" hidden>
                     <div class="date">AI quotas · reset countdowns</div>
@@ -914,6 +925,18 @@ footer a:hover{color:var(--text)}
       }
     }
     calGrid.innerHTML = html;
+  }
+
+  // media play/pause demo toggle
+  var demoPlayBtn = document.getElementById('demoPlayBtn');
+  if (demoPlayBtn) {
+    demoPlayBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var isPlay = demoPlayBtn.textContent === '⏸';
+      demoPlayBtn.textContent = isPlay ? '▶' : '⏸';
+      demoPlayBtn.title = isPlay ? 'Play' : 'Pause';
+      demoPlayBtn.style.color = isPlay ? 'var(--text)' : 'var(--ok)';
+    });
   }
 
   // google home demo toggles

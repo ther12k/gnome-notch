@@ -26,7 +26,7 @@ Windows. The AI-quota module spun out of my internal AI usage monitor
 | **Calendar** | today's date | month grid with today highlighted | — |
 | **Sound & Display** | — | interactive volume & brightness sliders, steppers, mute toggle | volume & brightness presets in menu |
 | **System strip** | — | battery · CPU temp · RAM on every page (each toggleable) | — |
-| **Media** (MPRIS) | animated equalizer while playing | artwork, track and artist | previous / play-pause / next |
+| **Media** (MPRIS) | animated equalizer while playing | artwork, track, artist, and 1-click previous / play-pause / next buttons | previous / play-pause / next |
 | **Focus timer** | countdown while active | countdown + progress | start work / break, or stop |
 | **Battery** | warning/charging indicator when relevant | percentage + bar | — |
 | **AI quota** | one chip per account: label, percentage bar and reset countdown (up to three) | up to three account rows with reset countdowns | — |

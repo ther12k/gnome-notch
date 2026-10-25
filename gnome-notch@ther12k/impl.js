@@ -1931,6 +1931,79 @@ class NotchBar extends PanelMenu.Button {
                         details.add_child(lbl(artist,
                             `font-size: 11.5px; color: ${T.muted};`));
                     box.add_child(details);
+
+                    // Media playback controls right on the island page
+                    const ctlRow = new St.BoxLayout({
+                        style: 'spacing: 5px;',
+                        y_align: Clutter.ActorAlign.CENTER,
+                    });
+
+                    const isPlaying = player.status === 'Playing';
+
+                    const prevBtn = new St.Button({
+                        label: '⏮',
+                        style: `${FONT}font-size: 13px; width: 28px; height: 28px; border-radius: 8px; ` +
+                            'background-color: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); ' +
+                            `color: ${T.text};`,
+                        y_align: Clutter.ActorAlign.CENTER,
+                        x_align: Clutter.ActorAlign.CENTER,
+                    });
+                    prevBtn.set_accessible_name('Previous track');
+                    prevBtn.connect('enter-event', () => prevBtn.set_style(
+                        `${FONT}font-size: 13px; width: 28px; height: 28px; border-radius: 8px; ` +
+                        'background-color: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.22); ' +
+                        'color: #ffffff; box-shadow: 0 0 8px rgba(255,255,255,0.25);'
+                    ));
+                    prevBtn.connect('leave-event', () => prevBtn.set_style(
+                        `${FONT}font-size: 13px; width: 28px; height: 28px; border-radius: 8px; ` +
+                        'background-color: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); ' +
+                        `color: ${T.text};`
+                    ));
+                    prevBtn.connect('clicked', () => {
+                        player.previous();
+                    });
+                    ctlRow.add_child(prevBtn);
+
+                    const ppBtn = new St.Button({
+                        label: isPlaying ? '⏸' : '▶',
+                        style: `${FONT}font-size: 14px; width: 34px; height: 34px; border-radius: 10px; ` +
+                            (isPlaying
+                                ? `background-color: rgba(63,214,143,0.22); color: #3fd68f; border: 1px solid rgba(63,214,143,0.60); box-shadow: 0 0 10px rgba(63,214,143,0.35);`
+                                : `background-color: rgba(255,255,255,0.10); color: ${T.text}; border: 1px solid rgba(255,255,255,0.14);`),
+                        y_align: Clutter.ActorAlign.CENTER,
+                        x_align: Clutter.ActorAlign.CENTER,
+                    });
+                    ppBtn.set_accessible_name(isPlaying ? 'Pause' : 'Play');
+                    ppBtn.connect('clicked', () => {
+                        player.playPause();
+                    });
+                    ctlRow.add_child(ppBtn);
+
+                    const nextBtn = new St.Button({
+                        label: '⏭',
+                        style: `${FONT}font-size: 13px; width: 28px; height: 28px; border-radius: 8px; ` +
+                            'background-color: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); ' +
+                            `color: ${T.text};`,
+                        y_align: Clutter.ActorAlign.CENTER,
+                        x_align: Clutter.ActorAlign.CENTER,
+                    });
+                    nextBtn.set_accessible_name('Next track');
+                    nextBtn.connect('enter-event', () => nextBtn.set_style(
+                        `${FONT}font-size: 13px; width: 28px; height: 28px; border-radius: 8px; ` +
+                        'background-color: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.22); ' +
+                        'color: #ffffff; box-shadow: 0 0 8px rgba(255,255,255,0.25);'
+                    ));
+                    nextBtn.connect('leave-event', () => nextBtn.set_style(
+                        `${FONT}font-size: 13px; width: 28px; height: 28px; border-radius: 8px; ` +
+                        'background-color: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); ' +
+                        `color: ${T.text};`
+                    ));
+                    nextBtn.connect('clicked', () => {
+                        player.next();
+                    });
+                    ctlRow.add_child(nextBtn);
+
+                    box.add_child(ctlRow);
                     return box;
                 },
             });
