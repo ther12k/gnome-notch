@@ -2286,6 +2286,53 @@ class NotchBar extends PanelMenu.Button {
         return btn;
     }
 
+    // compact slider item for side-by-side single line layout
+    _compactSliderItem(iconText, curVal, color, onSet, onIconClick) {
+        const item = new St.BoxLayout({
+            style: 'spacing: 6px;',
+            y_align: Clutter.ActorAlign.CENTER,
+            x_expand: true,
+        });
+
+        const icoBtn = new St.Button({
+            label: iconText,
+            style: `${FONT}font-size: 13px; width: 24px; height: 24px; border-radius: 6px; ` +
+                `background-color: rgba(255,255,255,0.06); color: ${color};`,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        if (onIconClick)
+            icoBtn.connect('clicked', onIconClick);
+        item.add_child(icoBtn);
+
+        const clamped = Math.max(0, Math.min(100, curVal));
+        const slider = new Slider(clamped / 100);
+        slider.style = `min-width: 80px; height: 16px; color: ${color};`;
+        slider.y_align = Clutter.ActorAlign.CENTER;
+        slider.x_expand = true;
+
+        const valLbl = new St.Label({
+            text: `${clamped}%`,
+            style: `${FONT}font-size: 10.5px; font-weight: 700; color: ${color}; min-width: 30px; ` +
+                'font-variant-numeric: tabular-nums;',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+
+        slider.connect('notify::value', () => {
+            const pct = Math.round(slider.value * 100);
+            valLbl.text = `${pct}%`;
+            onSet(pct, false);
+        });
+        slider.connect('drag-end', () => {
+            const pct = Math.round(slider.value * 100);
+            onSet(pct, true);
+        });
+
+        item.add_child(slider);
+        item.add_child(valLbl);
+
+        return item;
+    }
+
     _buildIslandFooter() {
         const app = this._app;
         const st = app.state;
@@ -2298,31 +2345,27 @@ class NotchBar extends PanelMenu.Button {
             x_expand: true,
         });
 
-        // 1. Sliders section: Volume + Brightness
-        const slidersBox = new St.BoxLayout({
-            vertical: true,
-            style: 'spacing: 4px;',
+        // 1. Sliders section: Volume + Brightness on ONE single line to save space
+        const slidersRow = new St.BoxLayout({
+            style: 'spacing: 12px;',
+            y_align: Clutter.ActorAlign.CENTER,
             x_expand: true,
         });
 
         const volIco = ctrl.muted ? '🔇' : (ctrl.volume > 50 ? '🔊' : (ctrl.volume > 0 ? '🔉' : '🔈'));
-        slidersBox.add_child(this._sliderRow(
-            volIco, 'Sound', ctrl.muted ? 0 : ctrl.volume, PAGE_HUES.controls || T.accent,
+        slidersRow.add_child(this._compactSliderItem(
+            volIco, ctrl.muted ? 0 : ctrl.volume, PAGE_HUES.controls || T.accent,
             (val, commit) => app.setVolume(val, commit),
-            () => app.setVolume(Math.max(0, (ctrl.muted ? 0 : ctrl.volume) - 5)),
-            () => app.setVolume(Math.min(100, (ctrl.muted ? 0 : ctrl.volume) + 5)),
             () => app.toggleMute()
         ));
 
-        slidersBox.add_child(this._sliderRow(
-            '☀️', 'Display', ctrl.brightness, '#f5b455',
+        slidersRow.add_child(this._compactSliderItem(
+            '☀️', ctrl.brightness, '#f5b455',
             (val, commit) => app.setBrightness(val, commit),
-            () => app.setBrightness(Math.max(5, ctrl.brightness - 10)),
-            () => app.setBrightness(Math.min(100, ctrl.brightness + 10)),
             () => app.setBrightness(ctrl.brightness > 20 ? 15 : 100)
         ));
 
-        footer.add_child(slidersBox);
+        footer.add_child(slidersRow);
 
         // 2. Bottom action row: hardware status badges on left + camera, settings, lock, power icons on right
         const actionRow = new St.BoxLayout({
