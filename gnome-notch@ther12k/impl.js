@@ -1814,31 +1814,89 @@ class NotchBar extends PanelMenu.Button {
             pages.push({
                 kind: 'ghome', icon: '🏠',
                 build: () => {
-                    const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
+                    const box = new St.BoxLayout({ vertical: true, style: 'spacing: 6px;' });
                     const s = g.summary || {};
-                    box.add_child(lbl(`🏠 home  ${s.has_active ? `${s.active_count} on` : 'all off'}`,
-                        `font-size: 14px; font-weight: 700; color: ${s.has_active ? T.ok : T.muted};`));
-                    g.devices.slice(0, 5).forEach(d => {
+
+                    const headRow = new St.BoxLayout({
+                        style: 'spacing: 6px;',
+                        y_align: Clutter.ActorAlign.CENTER,
+                        x_expand: true,
+                    });
+                    headRow.add_child(lbl(`🏠 Google Home`,
+                        `font-size: 11px; font-weight: 700; color: ${s.has_active ? T.ok : T.muted};`));
+
+                    headRow.add_child(new St.Widget({ x_expand: true }));
+
+                    const quickPillBtn = (label, title, onClick, color = T.text) => {
+                        const b = new St.Button({
+                            label,
+                            style: `${FONT}font-size: 9.5px; font-weight: 700; padding: 2px 6px; border-radius: 6px; ` +
+                                `background-color: rgba(255,255,255,0.06); color: ${color};`,
+                            y_align: Clutter.ActorAlign.CENTER,
+                        });
+                        b.set_accessible_name(title);
+                        b.connect('clicked', onClick);
+                        return b;
+                    };
+
+                    headRow.add_child(quickPillBtn('🌙 Off', 'Turn All Off', () => app.ghomeSetAll('off')));
+                    headRow.add_child(quickPillBtn('💡 On', 'Turn All On', () => app.ghomeSetAll('on'), T.ok));
+                    headRow.add_child(quickPillBtn('🌐 Web', 'Open Google Home Web', () => app.ghomeLaunch(), T.accent));
+                    headRow.add_child(quickPillBtn('🔄', 'Refresh Devices', () => app._pollGHome()));
+
+                    box.add_child(headRow);
+
+                    const devScroll = new St.ScrollView({
+                        style: 'max-height: 110px;',
+                        hscrollbar_policy: St.PolicyType.NEVER,
+                        vscrollbar_policy: St.PolicyType.AUTOMATIC,
+                        enable_mouse_scrolling: true,
+                        x_expand: true,
+                    });
+                    const devBox = new St.BoxLayout({ vertical: true, style: 'spacing: 4px;' });
+
+                    g.devices.forEach(d => {
                         const on = d.state === 'on';
                         const offline = d.state === 'offline';
                         const row = new St.BoxLayout({
-                            style: 'spacing: 8px;',
+                            style: 'spacing: 6px; padding: 1px 0;',
                             y_align: Clutter.ActorAlign.CENTER,
+                            x_expand: true,
                         });
-                        row.add_child(lbl(_ghomeIcon(d.type), 'font-size: 12.5px;'));
-                        row.add_child(lbl(String(d.name || 'device'),
-                            `font-size: 12.5px; font-weight: 700; color: ${T.text};`));
-                        row.add_child(new St.Widget({ x_expand: true }));
+
+                        row.add_child(lbl(_ghomeIcon(d.type), 'font-size: 12px; min-width: 16px;'));
+
+                        const nameBox = new St.BoxLayout({ vertical: true, style: 'spacing: 1px;', x_expand: true });
+                        nameBox.add_child(lbl(String(d.name || 'Device'),
+                            `font-size: 11px; font-weight: 700; color: ${on ? T.text : T.muted};`));
                         if (d.room)
-                            row.add_child(lbl(`${d.room} · `,
-                                `font-size: 10.5px; color: ${T.muted};`));
-                        row.add_child(lbl(offline ? 'offline' : (on ? 'on' : 'off'),
-                            `font-size: 12px; font-weight: 700; color: ${offline ? T.err : (on ? T.ok : T.muted)};`));
-                        box.add_child(row);
+                            nameBox.add_child(lbl(d.room,
+                                `font-size: 9px; color: rgba(232,234,237,0.40);`));
+                        row.add_child(nameBox);
+
+                        if (offline) {
+                            row.add_child(lbl('offline', `font-size: 9.5px; font-weight: 700; color: ${T.err}; min-width: 44px; text-align: right;`));
+                        } else {
+                            const togBtn = new St.Button({
+                                label: on ? 'ON 🔵' : 'OFF ⚪',
+                                style: `${FONT}font-size: 9.5px; font-weight: 800; padding: 1px 7px; border-radius: 999px; ` +
+                                    (on
+                                        ? `background-color: rgba(63,214,143,0.22); color: #3fd68f; border: 1px solid rgba(63,214,143,0.60); box-shadow: 0 0 6px rgba(63,214,143,0.25);`
+                                        : `background-color: rgba(255,255,255,0.06); color: rgba(232,234,237,0.55); border: 1px solid rgba(255,255,255,0.08);`),
+                                y_align: Clutter.ActorAlign.CENTER,
+                            });
+                            togBtn.connect('clicked', () => {
+                                app.ghomeToggle(d.name);
+                            });
+                            row.add_child(togBtn);
+                        }
+
+                        devBox.add_child(row);
                     });
-                    if (g.devices.length > 5)
-                        box.add_child(lbl(`+${g.devices.length - 5} more devices`,
-                            `font-size: 10.5px; color: ${T.muted};`));
+
+                    devScroll.set_child(devBox);
+                    box.add_child(devScroll);
+
                     return box;
                 },
             });
@@ -2576,16 +2634,54 @@ class NotchBar extends PanelMenu.Button {
         }
 
         if (mods.ghome && st.ghome && (st.ghome.devices || []).length) {
-            (st.ghome.devices || []).slice(0, 8).forEach(d => {
-                const on = d.state === 'on';
-                const item = new PopupMenu.PopupMenuItem(
-                    `${_ghomeIcon(d.type)}  ${d.name}  ·  ${on ? 'on' : 'off'}`);
-                item.connect('activate', () => app.ghomeToggle(d.name));
-                this.menu.addMenuItem(item);
-            });
-            const allOff = new PopupMenu.PopupMenuItem('🏠  All devices off');
+            const ghSub = new PopupMenu.PopupSubMenuMenuItem(
+                st.ghome.summary && st.ghome.summary.has_active
+                    ? `🏠  Google Home (${st.ghome.summary.active_count} on)`
+                    : '🏠  Google Home');
+
+            const allOff = new PopupMenu.PopupMenuItem('🌙  Turn All Devices OFF');
             allOff.connect('activate', () => app.ghomeSetAll('off'));
-            this.menu.addMenuItem(allOff);
+            ghSub.menu.addMenuItem(allOff);
+
+            const allOn = new PopupMenu.PopupMenuItem('💡  Turn All Devices ON');
+            allOn.connect('activate', () => app.ghomeSetAll('on'));
+            ghSub.menu.addMenuItem(allOn);
+
+            const openWeb = new PopupMenu.PopupMenuItem('🌐  Open Google Home Web');
+            openWeb.connect('activate', () => app.ghomeLaunch());
+            ghSub.menu.addMenuItem(openWeb);
+
+            const refreshDevs = new PopupMenu.PopupMenuItem('🔄  Refresh Status');
+            refreshDevs.connect('activate', () => app._pollGHome());
+            ghSub.menu.addMenuItem(refreshDevs);
+
+            ghSub.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
+            const rooms = st.ghome.rooms || {};
+            if (Object.keys(rooms).length) {
+                for (const [room, devs] of Object.entries(rooms)) {
+                    const rTitle = new PopupMenu.PopupMenuItem(`🚪 ${room}`, { reactive: false });
+                    ghSub.menu.addMenuItem(rTitle);
+                    devs.forEach(d => {
+                        const on = d.state === 'on';
+                        const item = new PopupMenu.PopupMenuItem(
+                            `   ${_ghomeIcon(d.type)}  ${d.name}  [${on ? 'ON 🔵' : (d.state === 'offline' ? 'OFFLINE' : 'OFF ⚪')}]`);
+                        if (d.state !== 'offline')
+                            item.connect('activate', () => app.ghomeToggle(d.name));
+                        ghSub.menu.addMenuItem(item);
+                    });
+                }
+            } else {
+                st.ghome.devices.forEach(d => {
+                    const on = d.state === 'on';
+                    const item = new PopupMenu.PopupMenuItem(
+                        `${_ghomeIcon(d.type)}  ${d.name}  [${on ? 'ON' : (d.state === 'offline' ? 'OFFLINE' : 'OFF')}]`);
+                    if (d.state !== 'offline')
+                        item.connect('activate', () => app.ghomeToggle(d.name));
+                    ghSub.menu.addMenuItem(item);
+                });
+            }
+            this.menu.addMenuItem(ghSub);
         }
 
         if (mods.controls !== false) {
@@ -3149,11 +3245,29 @@ class NotchApp {
     }
 
     ghomeToggle(name) {
+        if (this.state.ghome && this.state.ghome.devices) {
+            const dev = this.state.ghome.devices.find(d => d.name === name);
+            if (dev) {
+                dev.state = dev.state === 'on' ? 'off' : 'on';
+                this._notch && this._notch.render();
+            }
+        }
         this._runGHome(['--toggle', String(name)]);
     }
 
     ghomeSetAll(state) {
+        if (this.state.ghome && this.state.ghome.devices) {
+            this.state.ghome.devices.forEach(d => {
+                if (d.state !== 'offline')
+                    d.state = state;
+            });
+            this._notch && this._notch.render();
+        }
         this._runGHome([`--${state}`, 'all']);
+    }
+
+    ghomeLaunch() {
+        this._runGHome(['--launch']);
     }
 
     /* ----- volume and brightness controls ----- */
