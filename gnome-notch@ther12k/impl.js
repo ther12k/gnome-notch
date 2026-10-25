@@ -418,6 +418,26 @@ function actionScreenshot() {
     }
 }
 
+function actionRecordScreen() {
+    try {
+        if (Main.screenshotUI)
+            Main.screenshotUI.open(1).catch(() => actionScreenshot());
+        else
+            Util_spawn('gnome-screenshot -i');
+    } catch (e) {
+        actionScreenshot();
+    }
+}
+
+function actionStopRecording() {
+    try {
+        if (Main.screenshotUI)
+            Main.screenshotUI.stopScreencast();
+    } catch (e) {
+        log(`[Notch] stop screencast error: ${e}`);
+    }
+}
+
 function actionSettings() {
     Util_spawn('gnome-control-center');
 }
@@ -958,6 +978,16 @@ class NotchBar extends PanelMenu.Button {
         });
     }
 
+    _recElapsedStr() {
+        const start = this._app._screencastStartMs || 0;
+        if (!start)
+            return 'REC';
+        const sec = Math.max(0, Math.floor((Date.now() - start) / 1000));
+        const m = Math.floor(sec / 60);
+        const s = sec % 60;
+        return `REC ${m}:${String(s).padStart(2, '0')}`;
+    }
+
     /* ---------- expand / collapse ---------- */
 
     _cancelHoverTimers() {
@@ -1103,7 +1133,8 @@ class NotchBar extends PanelMenu.Button {
             (st.ghome.devices || []).map(d => `${d.name}:${d.state}`).join(','),
         ] : null;
         return JSON.stringify([this._app.cfgVersion, media, focus, ai, bat, sys, ctrl,
-            gh, st.water ? [st.water.date, st.water.ml] : null, this._dayStr()]);
+            gh, st.water ? [st.water.date, st.water.ml] : null, this._dayStr(),
+            !!this._app._screencastActive]);
     }
 
     _dayStr() {
@@ -1119,6 +1150,24 @@ class NotchBar extends PanelMenu.Button {
         this._collapsedBox.destroy_all_children();
         this._cdLabels = [];
         this._eyes = [];
+
+        // Screen recording active indicator: flashing red REC pill with 1-click stop
+        if (app._screencastActive) {
+            const recBtn = new St.Button({
+                label: `🔴 ${this._recElapsedStr()}`,
+                style: `${FONT}font-size: 11.5px; font-weight: 800; color: #ffffff; ` +
+                    'padding: 2px 9px; border-radius: 999px; background-color: #ef4444; ' +
+                    'box-shadow: 0 0 12px rgba(239, 68, 68, 0.85); margin-right: 4px;',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            recBtn.connect('clicked', () => {
+                actionStopRecording();
+            });
+            this._recBtn = recBtn;
+            this._collapsedBox.add_child(recBtn);
+        } else {
+            this._recBtn = null;
+        }
         const aiAccounts = _panelAccounts(st.ai);
         const worst = aiAccounts.reduce((m, a) => Math.max(m, a.used_pct || 0), 0);
         const batteryLow = st.battery && !st.battery.charging && st.battery.pct <= 20;
@@ -2438,7 +2487,31 @@ class NotchBar extends PanelMenu.Button {
 
         actionRow.add_child(new St.Widget({ x_expand: true }));
 
-        actionRow.add_child(this._actionIconBtn('📷', 'Take Screenshot', () => actionScreenshot()));
+        // If screen recording is active, show explicit Stop Rec button
+        if (app._screencastActive) {
+            const stopRecBtn = new St.Button({
+                label: `🔴 Stop (${this._recElapsedStr()})`,
+                style: `${FONT}font-size: 11px; font-weight: 800; color: #ffffff; ` +
+                    'padding: 3px 10px; border-radius: 7px; background-color: #ef4444; ' +
+                    'box-shadow: 0 0 12px rgba(239, 68, 68, 0.80);',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            stopRecBtn.set_accessible_name('Stop Screen Recording');
+            stopRecBtn.connect('clicked', () => actionStopRecording());
+            actionRow.add_child(stopRecBtn);
+        }
+
+        actionRow.add_child(this._actionIconBtn(
+            app._screencastActive ? '🔴' : '📷',
+            app._screencastActive ? 'Stop Screen Recording' : 'Take Screenshot / Record Screen',
+            () => {
+                if (app._screencastActive)
+                    actionStopRecording();
+                else
+                    actionScreenshot();
+            },
+            app._screencastActive ? '#ef4444' : T.text
+        ));
         actionRow.add_child(this._actionIconBtn('⚙️', 'GNOME Settings', () => actionSettings()));
         actionRow.add_child(this._actionIconBtn('🔒', 'Lock Screen', () => actionLock()));
         actionRow.add_child(this._actionIconBtn('⏻', 'Power Off / Restart', () => actionPowerOff(), T.err));
@@ -2552,6 +2625,8 @@ class NotchBar extends PanelMenu.Button {
             this._clockLbl.text = this._app.clockText();
         if (this._dateBtn)
             this._dateBtn.label = _nowLocal().format('%a %b %e');
+        if (this._recBtn && this._app._screencastActive)
+            this._recBtn.label = `🔴 ${this._recElapsedStr()}`;
         if (this._pillTempLbl && this._app.state.sys && this._app.state.sys.temp_c !== null) {
             const t = Math.round(this._app.state.sys.temp_c);
             this._pillTempLbl.text = `🌡 ${t}°C`;
@@ -2584,6 +2659,18 @@ class NotchBar extends PanelMenu.Button {
         const app = this._app;
         const st = app.state;
         const mods = app.cfg.modules;
+
+        if (app._screencastActive) {
+            const stopRecItem = new PopupMenu.PopupMenuItem('🔴  Stop Screen Recording');
+            stopRecItem.connect('activate', () => actionStopRecording());
+            this.menu.addMenuItem(stopRecItem);
+            this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+        } else {
+            const recItem = new PopupMenu.PopupMenuItem('🎥  Record Screen...');
+            recItem.connect('activate', () => actionRecordScreen());
+            this.menu.addMenuItem(recItem);
+            this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+        }
 
         const player = mods.media ? st.media : null;
         if (player) {
@@ -2944,6 +3031,24 @@ class NotchApp {
         this._scheduleSlowPoll();
         this.applyHidePanel();
 
+        // Screen recording state listener: detects screen recording in progress
+        this._screencastActive = false;
+        this._screencastStartMs = 0;
+        if (Main.screenshotUI) {
+            this._screencastSignalId = Main.screenshotUI.connect('notify::screencast-in-progress', () => {
+                const active = !!Main.screenshotUI.screencast_in_progress;
+                if (active && !this._screencastActive)
+                    this._screencastStartMs = Date.now();
+                else if (!active)
+                    this._screencastStartMs = 0;
+                this._screencastActive = active;
+                this._notch && this._notch.render();
+            });
+            this._screencastActive = !!Main.screenshotUI.screencast_in_progress;
+            if (this._screencastActive)
+                this._screencastStartMs = Date.now();
+        }
+
         this._pollBattery();
         this._pollSys();
         this._pollControls();
@@ -2972,6 +3077,10 @@ class NotchApp {
         if (this._watcher) {
             this._watcher.destroy();
             this._watcher = null;
+        }
+        if (this._screencastSignalId && Main.screenshotUI) {
+            Main.screenshotUI.disconnect(this._screencastSignalId);
+            this._screencastSignalId = 0;
         }
         if (this._notch) {
             this._notch.detach();
