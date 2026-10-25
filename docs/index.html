@@ -443,6 +443,8 @@ footer a:hover{color:var(--text)}
               <span class="mini"><i style="width:54%"></i></span>
               <span class="reset" style="color:var(--muted)">↻ 5h 12m</span>
               <span class="spacer"></span>
+              <span class="pill-stat" style="color:var(--ok)">📶 Aurora-5G</span>
+              <span class="pill-stat" style="color:var(--accent)">ᛒ Studio Headphones</span>
               <span class="pill-stat" style="color:var(--ok)">🌡 70°C</span>
               <span class="pill-stat" style="color:var(--ok)">⚡ 100%</span>
               <button class="pill-date" id="pillDate" data-pdate>📅 Sat Oct 24</button>
@@ -537,6 +539,19 @@ footer a:hover{color:var(--text)}
                       <span class="ctrl-val">100%</span>
                     </div>
                   </div>
+                  <div class="pg" data-kind="network" hidden>
+                    <div class="date">Network &amp; Bluetooth</div>
+                    <div class="ctrl-row" style="margin-top:2px">
+                      <span class="ctrl-ico" style="color:var(--ok)">📶</span>
+                      <div class="gh-info"><b>Aurora-5G</b><small>Wi-Fi Connected · 90% signal</small></div>
+                      <button class="gh-tog on" style="margin-left:auto">ON 🔵</button>
+                    </div>
+                    <div class="ctrl-row" style="margin-top:2px">
+                      <span class="ctrl-ico" style="color:var(--accent)">ᛒ</span>
+                      <div class="gh-info"><b>Studio Headphones</b><small>Bluetooth Connected</small></div>
+                      <button class="gh-tog on" style="margin-left:auto">ON 🔵</button>
+                    </div>
+                  </div>
                   <div class="pg" data-kind="config" hidden>
                     <div class="date">Quick settings</div>
                     <div class="cfgmods" id="cfgMods">
@@ -563,6 +578,9 @@ footer a:hover{color:var(--text)}
                   <div class="footer-actions">
                     <div class="strip"><span class="on">⚡ 100%</span><i>·</i><span>🌡 70°C</span><i>·</i><span>RAM 62%</span></div>
                     <div style="flex:1"></div>
+                    <button class="act-btn" style="color:var(--ok)" title="Wi-Fi: Aurora-5G">📶</button>
+                    <button class="act-btn" style="color:var(--accent)" title="Bluetooth: Studio Headphones">ᛒ</button>
+                    <button class="act-btn" title="Toggle Dark/Light Mode">🌙</button>
                     <button class="act-btn" title="Take Screenshot">📷</button>
                     <button class="act-btn" title="Settings">⚙️</button>
                     <button class="act-btn" title="Lock Screen">🔒</button>
@@ -799,6 +817,7 @@ footer a:hover{color:var(--text)}
     water: ['💧', '122,184,255'],
     calendar: ['📅', '122,184,255'],
     controls: ['🎛', '111,217,232'],
+    network: ['📶', '122,184,255'],
     config: ['⚙', '255,158,203'],
   };
   pgs.forEach(function (p, i) {

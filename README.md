@@ -22,6 +22,7 @@ Windows. The AI-quota module spun out of my internal AI usage monitor
 | Module | Resting pill | Hover island | Click menu |
 |---|---|---|---|
 | **Clock** | time | date | — |
+| **Network & Bluetooth** | 📶 Wi-Fi SSID + ᛒ device name | live Wi-Fi and Bluetooth toggles, device status, settings | Wi-Fi / Bluetooth submenus & settings |
 | **Calendar** | today's date | month grid with today highlighted | — |
 | **Sound & Display** | — | interactive volume & brightness sliders, steppers, mute toggle | volume & brightness presets in menu |
 | **System strip** | — | battery · CPU temp · RAM on every page (each toggleable) | — |
