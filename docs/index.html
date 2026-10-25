@@ -539,17 +539,50 @@ footer a:hover{color:var(--text)}
                       <span class="ctrl-val">100%</span>
                     </div>
                   </div>
-                  <div class="pg" data-kind="network" hidden>
-                    <div class="date">Network &amp; Bluetooth</div>
-                    <div class="ctrl-row" style="margin-top:2px">
-                      <span class="ctrl-ico" style="color:var(--ok)">📶</span>
-                      <div class="gh-info"><b>Aurora-5G</b><small>Wi-Fi Connected · 90% signal</small></div>
-                      <button class="gh-tog on" style="margin-left:auto">ON 🔵</button>
+                  <div class="pg" data-kind="wifi" hidden>
+                    <div style="display:flex;align-items:center;justify-content:space-between">
+                      <div class="date" style="margin:0">📶 Wi-Fi Networks</div>
+                      <button class="gh-tog on" style="font-size:9.5px;padding:2px 7px">ON 🔵</button>
                     </div>
-                    <div class="ctrl-row" style="margin-top:2px">
-                      <span class="ctrl-ico" style="color:var(--accent)">ᛒ</span>
-                      <div class="gh-info"><b>Studio Headphones</b><small>Bluetooth Connected</small></div>
-                      <button class="gh-tog on" style="margin-left:auto">ON 🔵</button>
+                    <div class="gh-list">
+                      <div class="gh-item">
+                        <span>📶</span>
+                        <div class="gh-info"><b>Aurora-5G</b><small>94% signal · WPA2</small></div>
+                        <button class="gh-tog on">Connected 🔵</button>
+                      </div>
+                      <div class="gh-item">
+                        <span>📶</span>
+                        <div class="gh-info"><b>Aurora-2G</b><small>94% signal · WPA2</small></div>
+                        <button class="gh-btn">Connect</button>
+                      </div>
+                      <div class="gh-item">
+                        <span>📶</span>
+                        <div class="gh-info"><b>Cafe Guest</b><small>45% signal · WPA2</small></div>
+                        <button class="gh-btn">Connect</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="pg" data-kind="bluetooth" hidden>
+                    <div style="display:flex;align-items:center;justify-content:space-between">
+                      <div class="date" style="margin:0">ᛒ Bluetooth Devices</div>
+                      <button class="gh-tog on" style="font-size:9.5px;padding:2px 7px">ON 🔵</button>
+                    </div>
+                    <div class="gh-list">
+                      <div class="gh-item">
+                        <span>🎧</span>
+                        <div class="gh-info"><b>Studio Headphones</b><small>Connected Device</small></div>
+                        <button class="gh-tog on">Disconnect 🔵</button>
+                      </div>
+                      <div class="gh-item">
+                        <span>🎧</span>
+                        <div class="gh-info"><b>Pixel Buds</b><small>Paired</small></div>
+                        <button class="gh-btn">Connect</button>
+                      </div>
+                      <div class="gh-item">
+                        <span>🎧</span>
+                        <div class="gh-info"><b>Desk Speaker</b><small>Paired</small></div>
+                        <button class="gh-btn">Connect</button>
+                      </div>
                     </div>
                   </div>
                   <div class="pg" data-kind="config" hidden>
@@ -817,7 +850,8 @@ footer a:hover{color:var(--text)}
     water: ['💧', '122,184,255'],
     calendar: ['📅', '122,184,255'],
     controls: ['🎛', '111,217,232'],
-    network: ['📶', '122,184,255'],
+    wifi: ['📶', '63,214,143'],
+    bluetooth: ['ᛒ', '122,184,255'],
     config: ['⚙', '255,158,203'],
   };
   pgs.forEach(function (p, i) {
