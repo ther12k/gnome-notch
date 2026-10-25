@@ -2231,32 +2231,25 @@ class NotchBar extends PanelMenu.Button {
             pages.push({
                 kind: 'network', icon: '📶',
                 build: () => {
-                    const net = st.net || { type: 'none', ssid: '', connected: false };
-                    const bt = st.bt || { powered: false, connected: false, device: '' };
-                    const box = new St.BoxLayout({ vertical: true, style: 'spacing: 7px;' });
+                    const net = st.net || { type: 'none', ssid: '', connected: false, networks: [] };
+                    const bt = st.bt || { powered: false, connected: false, device: '', devices: [] };
+                    const box = new St.BoxLayout({ vertical: true, style: 'spacing: 5px;' });
 
-                    box.add_child(lbl('📶  Network & Bluetooth',
-                        `font-size: 11px; font-weight: 700; color: ${T.muted};`));
-
-                    // Wi-Fi Row
-                    const wifiRow = new St.BoxLayout({
-                        style: 'spacing: 8px;',
+                    const headRow = new St.BoxLayout({
+                        style: 'spacing: 6px;',
                         y_align: Clutter.ActorAlign.CENTER,
                         x_expand: true,
                     });
-                    wifiRow.add_child(lbl(net.connected ? '📶' : '📵', 'font-size: 14px; min-width: 22px;'));
-                    const wifiBox = new St.BoxLayout({ vertical: true, style: 'spacing: 1px;', x_expand: true });
-                    wifiBox.add_child(lbl(net.connected ? (net.ssid || 'Connected') : 'Wi-Fi Disconnected',
-                        `font-size: 11.5px; font-weight: 700; color: ${net.connected ? T.text : T.muted};`));
-                    wifiBox.add_child(lbl(net.connected ? 'Wi-Fi Network' : 'No connection',
-                        `font-size: 9.5px; color: rgba(232,234,237,0.40);`));
-                    wifiRow.add_child(wifiBox);
+                    headRow.add_child(lbl('📶 Network & Bluetooth',
+                        `font-size: 11px; font-weight: 700; color: ${PAGE_HUES.network};`));
+
+                    headRow.add_child(new St.Widget({ x_expand: true }));
 
                     const wifiTogBtn = new St.Button({
-                        label: net.connected ? 'ON 🔵' : 'OFF ⚪',
-                        style: `${FONT}font-size: 9.5px; font-weight: 800; padding: 2px 8px; border-radius: 999px; ` +
+                        label: net.connected ? '📶 WiFi ON 🔵' : '📵 WiFi OFF ⚪',
+                        style: `${FONT}font-size: 9.5px; font-weight: 800; padding: 2px 7px; border-radius: 999px; ` +
                             (net.connected
-                                ? `background-color: rgba(63,214,143,0.22); color: #3fd68f; border: 1px solid rgba(63,214,143,0.60);`
+                                ? `background-color: rgba(63,214,143,0.20); color: #3fd68f; border: 1px solid rgba(63,214,143,0.50);`
                                 : `background-color: rgba(255,255,255,0.06); color: rgba(232,234,237,0.55); border: 1px solid rgba(255,255,255,0.08);`),
                         y_align: Clutter.ActorAlign.CENTER,
                     });
@@ -2264,38 +2257,13 @@ class NotchBar extends PanelMenu.Button {
                         setWifiEnabled(!net.connected);
                         setTimeout(() => app._pollNetwork(), 800);
                     });
-                    wifiRow.add_child(wifiTogBtn);
-
-                    const wifiSetBtn = new St.Button({
-                        label: '⚙️',
-                        style: `${FONT}font-size: 11px; padding: 2px 6px; border-radius: 6px; background-color: rgba(255,255,255,0.06);`,
-                        y_align: Clutter.ActorAlign.CENTER,
-                    });
-                    wifiSetBtn.set_accessible_name('Wi-Fi Settings');
-                    wifiSetBtn.connect('clicked', () => actionSettings('wifi'));
-                    wifiRow.add_child(wifiSetBtn);
-
-                    box.add_child(wifiRow);
-
-                    // Bluetooth Row
-                    const btRow = new St.BoxLayout({
-                        style: 'spacing: 8px;',
-                        y_align: Clutter.ActorAlign.CENTER,
-                        x_expand: true,
-                    });
-                    btRow.add_child(lbl('ᛒ', `font-size: 14px; min-width: 22px; color: ${bt.connected ? '#7ab8ff' : (bt.powered ? T.text : T.muted)};`));
-                    const btBox = new St.BoxLayout({ vertical: true, style: 'spacing: 1px;', x_expand: true });
-                    btBox.add_child(lbl(bt.connected ? (bt.device || 'Connected') : (bt.powered ? 'Bluetooth On' : 'Bluetooth Off'),
-                        `font-size: 11.5px; font-weight: 700; color: ${bt.connected ? T.text : (bt.powered ? T.text : T.muted)};`));
-                    btBox.add_child(lbl(bt.connected ? 'Connected Device' : (bt.powered ? 'Ready to pair' : 'Powered off'),
-                        `font-size: 9.5px; color: rgba(232,234,237,0.40);`));
-                    btRow.add_child(btBox);
+                    headRow.add_child(wifiTogBtn);
 
                     const btTogBtn = new St.Button({
-                        label: bt.powered ? 'ON 🔵' : 'OFF ⚪',
-                        style: `${FONT}font-size: 9.5px; font-weight: 800; padding: 2px 8px; border-radius: 999px; ` +
+                        label: bt.powered ? 'ᛒ BT ON 🔵' : 'ᛒ BT OFF ⚪',
+                        style: `${FONT}font-size: 9.5px; font-weight: 800; padding: 2px 7px; border-radius: 999px; ` +
                             (bt.powered
-                                ? `background-color: rgba(122,184,255,0.22); color: #7ab8ff; border: 1px solid rgba(122,184,255,0.60);`
+                                ? `background-color: rgba(122,184,255,0.20); color: #7ab8ff; border: 1px solid rgba(122,184,255,0.50);`
                                 : `background-color: rgba(255,255,255,0.06); color: rgba(232,234,237,0.55); border: 1px solid rgba(255,255,255,0.08);`),
                         y_align: Clutter.ActorAlign.CENTER,
                     });
@@ -2303,18 +2271,118 @@ class NotchBar extends PanelMenu.Button {
                         setBluetoothPowered(!bt.powered);
                         setTimeout(() => app._pollBluetooth(), 800);
                     });
-                    btRow.add_child(btTogBtn);
+                    headRow.add_child(btTogBtn);
 
-                    const btSetBtn = new St.Button({
-                        label: '⚙️',
-                        style: `${FONT}font-size: 11px; padding: 2px 6px; border-radius: 6px; background-color: rgba(255,255,255,0.06);`,
+                    const refreshBtn = new St.Button({
+                        label: '🔄',
+                        style: `${FONT}font-size: 9.5px; padding: 2px 5px; border-radius: 6px; background-color: rgba(255,255,255,0.06); color: ${T.text};`,
                         y_align: Clutter.ActorAlign.CENTER,
                     });
-                    btSetBtn.set_accessible_name('Bluetooth Settings');
-                    btSetBtn.connect('clicked', () => actionSettings('bluetooth'));
-                    btRow.add_child(btSetBtn);
+                    refreshBtn.connect('clicked', () => {
+                        app._pollNetwork();
+                        app._pollBluetooth();
+                    });
+                    headRow.add_child(refreshBtn);
 
-                    box.add_child(btRow);
+                    box.add_child(headRow);
+
+                    // Scrollable list of paired Bluetooth devices & Wi-Fi networks
+                    const netScroll = new St.ScrollView({
+                        style: 'max-height: 110px;',
+                        hscrollbar_policy: St.PolicyType.NEVER,
+                        vscrollbar_policy: St.PolicyType.AUTOMATIC,
+                        enable_mouse_scrolling: true,
+                        x_expand: true,
+                    });
+                    const scrollBox = new St.BoxLayout({ vertical: true, style: 'spacing: 4px;' });
+
+                    // 1. Bluetooth devices section
+                    const btHeader = new St.BoxLayout({ style: 'spacing: 6px; margin-top: 2px;' });
+                    btHeader.add_child(lbl(`ᛒ Bluetooth Devices (${(bt.devices || []).length} paired)`,
+                        `font-size: 10px; font-weight: 700; color: ${T.muted}; letter-spacing: 0.05em;`));
+                    scrollBox.add_child(btHeader);
+
+                    if ((bt.devices || []).length === 0) {
+                        scrollBox.add_child(lbl('No paired devices found', `font-size: 10px; color: ${T.muted}; margin-left: 8px;`));
+                    } else {
+                        (bt.devices || []).forEach(d => {
+                            const row = new St.BoxLayout({
+                                style: 'spacing: 7px; padding: 1px 0;',
+                                y_align: Clutter.ActorAlign.CENTER,
+                                x_expand: true,
+                            });
+                            row.add_child(lbl(d.connected ? '🎧' : 'ᛒ', `font-size: 12px; min-width: 16px; color: ${d.connected ? '#7ab8ff' : T.muted};`));
+
+                            const nameLbl = lbl(d.name || d.mac,
+                                `font-size: 11px; font-weight: 700; color: ${d.connected ? T.text : T.muted};`);
+                            nameLbl.x_expand = true;
+                            row.add_child(nameLbl);
+
+                            const connBtn = new St.Button({
+                                label: d.connected ? 'Disconnect' : 'Connect',
+                                style: `${FONT}font-size: 9.5px; font-weight: 700; padding: 1px 7px; border-radius: 6px; ` +
+                                    (d.connected
+                                        ? `background-color: rgba(122,184,255,0.22); color: #7ab8ff; border: 1px solid rgba(122,184,255,0.60);`
+                                        : `background-color: rgba(255,255,255,0.06); color: ${T.text}; border: 1px solid rgba(255,255,255,0.08);`),
+                                y_align: Clutter.ActorAlign.CENTER,
+                            });
+                            connBtn.connect('clicked', () => {
+                                if (d.connected)
+                                    disconnectBluetooth(d.mac);
+                                else
+                                    connectBluetooth(d.mac);
+                                setTimeout(() => app._pollBluetooth(), 1200);
+                            });
+                            row.add_child(connBtn);
+
+                            scrollBox.add_child(row);
+                        });
+                    }
+
+                    // 2. Wi-Fi networks section
+                    const wifiHeader = new St.BoxLayout({ style: 'spacing: 6px; margin-top: 5px;' });
+                    wifiHeader.add_child(lbl(`📶 Wi-Fi Networks (${(net.networks || []).length} nearby)`,
+                        `font-size: 10px; font-weight: 700; color: ${T.muted}; letter-spacing: 0.05em;`));
+                    scrollBox.add_child(wifiHeader);
+
+                    if ((net.networks || []).length === 0) {
+                        scrollBox.add_child(lbl('Scanning for networks…', `font-size: 10px; color: ${T.muted}; margin-left: 8px;`));
+                    } else {
+                        (net.networks || []).forEach(w => {
+                            const row = new St.BoxLayout({
+                                style: 'spacing: 7px; padding: 1px 0;',
+                                y_align: Clutter.ActorAlign.CENTER,
+                                x_expand: true,
+                            });
+                            row.add_child(lbl('📶', `font-size: 11px; min-width: 16px; color: ${w.active ? '#3fd68f' : T.muted};`));
+
+                            const nameBox = new St.BoxLayout({ style: 'spacing: 5px;', x_expand: true });
+                            nameBox.add_child(lbl(w.ssid, `font-size: 11px; font-weight: 700; color: ${w.active ? T.text : T.muted};`));
+                            nameBox.add_child(lbl(`${w.signal}%`, `font-size: 9px; color: rgba(232,234,237,0.35);`));
+                            row.add_child(nameBox);
+
+                            const connBtn = new St.Button({
+                                label: w.active ? 'Connected 🔵' : 'Connect',
+                                style: `${FONT}font-size: 9.5px; font-weight: 700; padding: 1px 7px; border-radius: 6px; ` +
+                                    (w.active
+                                        ? `background-color: rgba(63,214,143,0.22); color: #3fd68f; border: 1px solid rgba(63,214,143,0.60);`
+                                        : `background-color: rgba(255,255,255,0.06); color: ${T.text}; border: 1px solid rgba(255,255,255,0.08);`),
+                                y_align: Clutter.ActorAlign.CENTER,
+                            });
+                            if (!w.active) {
+                                connBtn.connect('clicked', () => {
+                                    connectWifi(w.ssid);
+                                    setTimeout(() => app._pollNetwork(), 1500);
+                                });
+                            }
+                            row.add_child(connBtn);
+
+                            scrollBox.add_child(row);
+                        });
+                    }
+
+                    netScroll.set_child(scrollBox);
+                    box.add_child(netScroll);
 
                     return box;
                 },
@@ -3144,7 +3212,7 @@ class NotchBar extends PanelMenu.Button {
             this.menu.addMenuItem(briSub);
         }
 
-        const net = st.net || { type: 'none', ssid: '', connected: false };
+        const net = st.net || { type: 'none', ssid: '', connected: false, networks: [] };
         const wifiSub = new PopupMenu.PopupSubMenuMenuItem(
             net.connected ? `📶  Wi-Fi (${net.ssid || 'Connected'})` : '📵  Wi-Fi (Disconnected)');
         const wifiTog = new PopupMenu.PopupMenuItem(net.connected ? 'Turn Wi-Fi Off' : 'Turn Wi-Fi On');
@@ -3156,9 +3224,23 @@ class NotchBar extends PanelMenu.Button {
         const wifiSet = new PopupMenu.PopupMenuItem('⚙️  Wi-Fi Settings...');
         wifiSet.connect('activate', () => actionSettings('wifi'));
         wifiSub.menu.addMenuItem(wifiSet);
+
+        if ((net.networks || []).length) {
+            wifiSub.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+            net.networks.slice(0, 7).forEach(w => {
+                const item = new PopupMenu.PopupMenuItem(`   📶  ${w.ssid}  (${w.signal}%)  ${w.active ? '[Connected 🔵]' : ''}`);
+                if (!w.active) {
+                    item.connect('activate', () => {
+                        connectWifi(w.ssid);
+                        setTimeout(() => app._pollNetwork(), 1500);
+                    });
+                }
+                wifiSub.menu.addMenuItem(item);
+            });
+        }
         this.menu.addMenuItem(wifiSub);
 
-        const bt = st.bt || { powered: false, connected: false, device: '' };
+        const bt = st.bt || { powered: false, connected: false, device: '', devices: [] };
         const btSub = new PopupMenu.PopupSubMenuMenuItem(
             bt.connected ? `ᛒ  Bluetooth (${bt.device || 'Connected'})` : (bt.powered ? 'ᛒ  Bluetooth (On)' : 'ᛒ  Bluetooth (Off)'));
         const btTog = new PopupMenu.PopupMenuItem(bt.powered ? 'Turn Bluetooth Off' : 'Turn Bluetooth On');
@@ -3170,6 +3252,21 @@ class NotchBar extends PanelMenu.Button {
         const btSet = new PopupMenu.PopupMenuItem('⚙️  Bluetooth Settings...');
         btSet.connect('activate', () => actionSettings('bluetooth'));
         btSub.menu.addMenuItem(btSet);
+
+        if ((bt.devices || []).length) {
+            btSub.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+            bt.devices.slice(0, 8).forEach(d => {
+                const item = new PopupMenu.PopupMenuItem(`   🎧  ${d.name}  [${d.connected ? 'Disconnect 🔵' : 'Connect'}]`);
+                item.connect('activate', () => {
+                    if (d.connected)
+                        disconnectBluetooth(d.mac);
+                    else
+                        connectBluetooth(d.mac);
+                    setTimeout(() => app._pollBluetooth(), 1200);
+                });
+                btSub.menu.addMenuItem(item);
+            });
+        }
         this.menu.addMenuItem(btSub);
 
         const darkItem = new PopupMenu.PopupMenuItem('🌙  Toggle Dark / Light Mode');
@@ -3656,20 +3753,22 @@ class NotchApp {
     _pollNetwork() {
         getNetworkStatus(net => {
             const cur = this.state.net || {};
-            if (cur.connected !== net.connected || cur.ssid !== net.ssid || cur.type !== net.type) {
-                this.state.net = net;
+            const changed = cur.connected !== net.connected || cur.ssid !== net.ssid ||
+                (cur.networks || []).length !== (net.networks || []).length;
+            this.state.net = net;
+            if (changed)
                 this._notch && this._notch.render();
-            }
         });
     }
 
     _pollBluetooth() {
         getBluetoothStatus(bt => {
             const cur = this.state.bt || {};
-            if (cur.powered !== bt.powered || cur.connected !== bt.connected || cur.device !== bt.device) {
-                this.state.bt = bt;
+            const changed = cur.powered !== bt.powered || cur.connected !== bt.connected ||
+                cur.device !== bt.device || (cur.devices || []).length !== (bt.devices || []).length;
+            this.state.bt = bt;
+            if (changed)
                 this._notch && this._notch.render();
-            }
         });
     }
 
