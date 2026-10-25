@@ -63,8 +63,23 @@ the ⚙ page) hides the GNOME top bar entirely so the notch is the only thing
 left at the top — the panel returns when the option is switched off or the
 extension is disabled. After editing the file, choose **↻ Reload settings** in
 the menu. Invalid JSON is
-left untouched and the current settings remain active until the file is fixed.
+left untouched and the current settings remain active until the file is fixed —
+the extension refuses to save over a settings file it cannot parse, so a typo
+can never wipe your configuration.
 The config editor opens the JSON file through the default file handler.
+
+**Privacy:** the notch has no telemetry. The only outbound requests are the
+quota checks you enabled: your key goes to the provider endpoint configured in
+`providers.glm.base_url` (default `https://api.z.ai`) and nowhere else.
+Autodetection imports Claude-config credentials **only** when that config is
+explicitly pointed at z.ai/bigmodel — an Anthropic API key on the official
+endpoint is never sent to another provider. Google Home devices are really
+switched when a device has a local `api_endpoint` or when the shared Home
+Assistant bridge is configured (`~/.config/google-home-panel/config.json` →
+`external_bridges.home_assistant` with `url` + `token`, per-device `ha_entity`);
+without a backend the toggles are a local simulation and the island shows a
+`sim` badge. Run `./scripts/secret-scan.sh` before committing to catch
+accidental secrets.
 
 ## Install
 

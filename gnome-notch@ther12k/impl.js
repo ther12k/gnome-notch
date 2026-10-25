@@ -191,18 +191,29 @@ function readConfig() {
 }
 
 function loadConfig() {
+    loadConfig.failed = false;
     try {
         return readConfig();
     } catch (e) {
         log(`[Notch] config load failed, using defaults: ${e}`);
         const cfg = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
-        if (!Gio.File.new_for_path(CONFIG_PATH).query_exists(null))
+        const file = Gio.File.new_for_path(CONFIG_PATH);
+        if (!file.query_exists(null)) {
             saveConfig(cfg);
+        } else {
+            // The file exists but doesn't parse. Keep the user's bytes intact —
+            // saveConfig refuses to write until it parses again.
+            loadConfig.failed = true;
+        }
         return cfg;
     }
 }
 
 function saveConfig(cfg) {
+    if (loadConfig.failed === true) {
+        log('[Notch] refusing to overwrite unreadable settings file; fix the JSON and ↻ Reload settings');
+        return;
+    }
     try {
         GLib.mkdir_with_parents(CONFIG_DIR, 0o755);
         GLib.file_set_contents(CONFIG_PATH, JSON.stringify(cfg, null, 2));
@@ -292,6 +303,9 @@ const DBusProxy = Gio.DBusProxy.makeProxyWrapper(DBUS_IFACE_XML);
 class MediaWatcher {
     constructor(onChange) {
         this._players = new Map();
+        this._playerSignals = new Map(); // busName -> [changedId, closedId]
+        this._nameSignalId = 0;
+        this._destroyed = false;
         this._onChange = onChange;
         this._proxy = new DBusProxy(Gio.DBus.session, 'org.freedesktop.DBus',
             '/org/freedesktop/DBus', (p, err) => {
@@ -313,7 +327,9 @@ class MediaWatcher {
         } catch (e) {
             log(`[Notch] ListNames failed: ${e}`);
         }
-        this._proxy.connectSignal('NameOwnerChanged', (_, __, [name, oldO, newO]) => {
+        this._nameSignalId = this._proxy.connectSignal('NameOwnerChanged', (_, __, [name, oldO, newO]) => {
+            if (this._destroyed)
+                return;
             if (!name.startsWith(MPRIS_PREFIX))
                 return;
             if (newO && !oldO)
@@ -323,15 +339,17 @@ class MediaWatcher {
     }
 
     _add(busName) {
-        if (this._players.has(busName))
+        if (this._destroyed || this._players.has(busName))
             return;
         const player = new MprisPlayer(busName);
-        player.connect('changed', () => this._onChange());
-        player.connect('closed', () => {
+        const changedId = player.connect('changed', () => this._onChange());
+        const closedId = player.connect('closed', () => {
             this._players.delete(busName);
+            this._playerSignals.delete(busName);
             this._onChange();
         });
         this._players.set(busName, player);
+        this._playerSignals.set(busName, [changedId, closedId]);
     }
 
     // Prefer whichever player is actively playing, else the first one.
@@ -347,6 +365,29 @@ class MediaWatcher {
     }
 
     destroy() {
+        this._destroyed = true;
+        if (this._nameSignalId) {
+            try {
+                this._proxy.disconnectSignal(this._nameSignalId);
+            } catch (e) {}
+            this._nameSignalId = 0;
+        }
+        for (const [busName, [changedId, closedId]] of this._playerSignals) {
+            const player = this._players.get(busName);
+            if (player) {
+                try {
+                    player.disconnect(changedId);
+                    player.disconnect(closedId);
+                } catch (e) {}
+                // let the player release its own DBus watches; private API,
+                // so guard it — dropping our references is the fallback
+                try {
+                    if (typeof player._close === 'function')
+                        player._close();
+                } catch (e) {}
+            }
+        }
+        this._playerSignals.clear();
         this._players.clear();
     }
 }
@@ -526,7 +567,36 @@ function setWifiEnabled(enabled) {
 }
 
 function connectWifi(ssid) {
-    Util_spawn(`nmcli dev wifi connect "${ssid}" || nmcli con up "${ssid}"`);
+    // argv-based with an exit-status fallback; never a shell, so an SSID can
+    // never be interpreted as command syntax.
+    const tryConnect = () => {
+        try {
+            const proc = new Gio.Subprocess({
+                argv: ['nmcli', 'dev', 'wifi', 'connect', String(ssid)],
+                flags: Gio.SubprocessFlags.NONE,
+            });
+            proc.init(null);
+            proc.wait_check_async(null, (obj, res) => {
+                try {
+                    if (!proc.wait_check_finish(res)) {
+                        // no saved profile matched a fresh scan — bring the
+                        // existing connection profile up instead
+                        const up = new Gio.Subprocess({
+                            argv: ['nmcli', 'con', 'up', String(ssid)],
+                            flags: Gio.SubprocessFlags.NONE,
+                        });
+                        up.init(null);
+                        up.wait_check_async(null, () => {});
+                    }
+                } catch (e) {
+                    log(`[Notch] wifi connect failed: ${e}`);
+                }
+            });
+        } catch (e) {
+            log(`[Notch] wifi spawn failed: ${e}`);
+        }
+    };
+    tryConnect();
 }
 
 function getBluetoothStatus(cb) {
@@ -2033,6 +2103,8 @@ class NotchBar extends PanelMenu.Button {
                     });
                     headRow.add_child(lbl(`🏠 Google Home`,
                         `font-size: 11px; font-weight: 700; color: ${s.has_active ? T.ok : T.muted};`));
+                    if (g.live === false)
+                        headRow.add_child(lbl('sim', `font-size: 9px; font-weight: 700; color: ${T.muted}; padding: 1px 5px; border-radius: 5px; border: 1px solid rgba(232,234,237,0.18);`));
 
                     headRow.add_child(new St.Widget({ x_expand: true }));
 
@@ -2175,7 +2247,7 @@ class NotchBar extends PanelMenu.Button {
                     const volIco = c.muted ? '🔇' : (c.volume > 50 ? '🔊' : (c.volume > 0 ? '🔉' : '🔈'));
                     box.add_child(this._sliderRow(
                         volIco, 'Sound', c.muted ? 0 : c.volume, PAGE_HUES.controls,
-                        val => app.setVolume(val),
+                        (val, commit) => app.setVolume(val, commit),
                         () => app.setVolume(Math.max(0, (c.muted ? 0 : c.volume) - 5)),
                         () => app.setVolume(Math.min(100, (c.muted ? 0 : c.volume) + 5)),
                         () => app.toggleMute()
@@ -2600,12 +2672,12 @@ class NotchBar extends PanelMenu.Button {
         this._islandKind = kind;
         const pages = this._islandPages();
         const idx = pages.findIndex(p => p.kind === kind);
-        if (idx >= 0)
-            this._islandPage = idx;
+        // _showIslandPage owns _islandPage; assigning it here would defeat
+        // its same-page early-out and leave the old page displayed.
         if (!this._expanded)
             this._expand();
-        else
-            this._showIslandPage(idx >= 0 ? idx : 0, 1);
+        else if (idx >= 0)
+            this._showIslandPage(idx, 1);
     }
 
     // apply an appearance change made from the config page and re-render
@@ -3990,6 +4062,7 @@ class NotchApp {
         this.cfg = next;
         this.state.water = next.water;
         this.cfgVersion++;
+        loadConfig.failed = false; // a fresh parse means saving is safe again
 
         if (next.modules.media !== previous.modules.media)
             this._mediaChanged();

@@ -384,7 +384,10 @@ def _autodetect_glm_accounts():
                 env = json.load(f).get("env", {})
             base = env.get("ANTHROPIC_BASE_URL") or ""
             key = env.get("ANTHROPIC_AUTH_TOKEN") or env.get("ANTHROPIC_API_KEY")
-            if key and ("z.ai" in base or "bigmodel" in base or not base):
+            # Only trust ANTHROPIC_* credentials as GLM keys when the settings
+            # explicitly point at z.ai/bigmodel. An unset base URL means the
+            # official Anthropic API, and that key must never be sent to z.ai.
+            if key and ("z.ai" in base or "bigmodel" in base):
                 found.append({"name": "claude", "short": "c", "api_key": key})
         except Exception:
             pass

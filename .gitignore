@@ -1,3 +1,22 @@
 gnome-notch@ther12k/impl-*.js
 *.log
 .DS_Store
+
+# secrets & credentials — never commit these
+.env
+.env.*
+*.env
+*.key
+*.pem
+*.p12
+auth.json
+*credentials*.json
+*-credentials.json
+storage_state*.json
+*.har
+
+# local agent & browser artifacts
+.zcode/
+.playwright-cli/
+node_modules/
+__pycache__/

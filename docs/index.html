@@ -526,8 +526,8 @@ footer a:hover{color:var(--text)}
                       </div>
                       <div class="gh-item">
                         <span>💡</span>
-                        <div class="gh-info"><b>Desk Lamp</b><small>Office</small></div>
-                        <button class="gh-tog" data-dev="Desk Lamp">OFF ⚪</button>
+                        <div class="gh-info"><b>Bedroom Lamp</b><small>Office</small></div>
+                        <button class="gh-tog" data-dev="Bedroom Lamp">OFF ⚪</button>
                       </div>
                     </div>
                   </div>
@@ -716,7 +716,7 @@ footer a:hover{color:var(--text)}
           <div class="srow dim" style="font-size:11px">Smart Plug · Bedroom Lamp · Desk Lamp</div>
         </div>
         <h3>🏠 Google Home smart control</h3>
-        <p>1-click tactile ON/OFF toggles grouped by room, All On/Off batch buttons, and direct web launcher imported from the companion toolbar.</p>
+        <p>1-click tactile ON/OFF toggles grouped by room, All On/Off batch buttons, and a direct web launcher. Devices with a local <code>api_endpoint</code> or a Home Assistant bridge are really switched; without a backend the island shows a <code>sim</code> badge so you always know what's live.</p>
       </div>
       <div class="tile">
         <div class="stage">
@@ -744,7 +744,7 @@ footer a:hover{color:var(--text)}
     <div class="trio">
       <div class="tile"><div class="ico">🤫</div><h3>Quiet when idle</h3><p>The eyes close when you're busy and open when it's calm. No popups, no nagging — the notch only grows when you ask it to.</p></div>
       <div class="tile"><div class="ico">🖥️</div><h3>Steps aside for work</h3><p>Go fullscreen and the notch disappears instantly — movies, games and presentations get the whole screen.</p></div>
-      <div class="tile"><div class="ico">🔒</div><h3>Local &amp; private</h3><p>Everything lives in a small JSON config on your machine. No accounts, no cloud, no telemetry — your AI keys never leave your computer.</p></div>
+      <div class="tile"><div class="ico">🔒</div><h3>Local &amp; private</h3><p>Everything lives in a small JSON config on your machine. No accounts, no telemetry — your keys are sent only to the AI provider you configured, for the quota checks you enabled, and nowhere else.</p></div>
     </div>
   </div>
 </section>
@@ -808,7 +808,7 @@ footer a:hover{color:var(--text)}
       </details>
       <details>
         <summary>Where does the AI quota data come from?</summary>
-        <p>From your own accounts: the collector reads the same config as <code>aiacctool</code> (<code>~/.config/ai-usage-monitor/</code>) and runs entirely on your machine. No data is sent anywhere.</p>
+        <p>From your own accounts: the collector reads the same config as <code>aiacctool</code> (<code>~/.config/ai-usage-monitor/</code>) and runs entirely on your machine. The only network requests are the quota checks to the provider you configured — no telemetry, no third parties.</p>
       </details>
     </div>
   </div>

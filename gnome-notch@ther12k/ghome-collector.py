@@ -9,6 +9,7 @@ import sys
 import json
 import time
 import subprocess
+import urllib.request
 from pathlib import Path
 
 CONFIG_DIR = Path.home() / ".config" / "google-home-panel"
@@ -124,32 +125,106 @@ def launch_google_home():
         return {"status": "error", "error": str(e)}
 
 
+def _http_json(method, url, payload=None, headers=None, timeout=4):
+    """One-shot JSON HTTP call. Returns nothing on 2xx, raises on failure."""
+    data = json.dumps(payload).encode() if payload is not None else None
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Content-Type", "application/json")
+    for k, v in (headers or {}).items():
+        req.add_header(k, v)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        resp.read()
+
+
+def _ha_bridge(cfg):
+    """The Home Assistant bridge, when fully configured; otherwise None."""
+    ha = (cfg.get("external_bridges") or {}).get("home_assistant") or {}
+    if ha.get("enabled") and ha.get("url") and ha.get("token"):
+        return ha
+    return None
+
+
+def _device_backend(dev, cfg):
+    """Build a callable(new_state) that really controls the device through its
+    api_endpoint or the Home Assistant bridge. None when no backend is
+    configured — those devices fall back to clearly-labeled local simulation."""
+    endpoint = (dev.get("api_endpoint") or "").strip()
+    ha = _ha_bridge(cfg)
+    entity = dev.get("ha_entity") or dev.get("entity_id")
+    if not endpoint and not (ha and entity):
+        return None
+
+    def _apply(new_state):
+        errors = []
+        if endpoint:
+            try:
+                _http_json("POST", endpoint,
+                           {"device": dev.get("name") or dev.get("id"), "state": new_state})
+                return
+            except Exception as e:
+                errors.append(f"endpoint: {e}")
+        if ha and entity:
+            service = "turn_on" if new_state == "on" else "turn_off"
+            try:
+                _http_json("POST", ha["url"].rstrip("/") +
+                           f"/api/services/homeassistant/{service}",
+                           {"entity_id": entity},
+                           {"Authorization": f"Bearer {ha['token']}"})
+                return
+            except Exception as e:
+                errors.append(f"homeassistant: {e}")
+        raise RuntimeError("; ".join(errors) or "no backend reached")
+
+    return _apply
+
+
 def set_device_state(dev_name_or_id, new_state):
     cfg = load_config()
+    devices = cfg.get("devices", [])
 
     if dev_name_or_id.lower() in ["all", "semua"]:
-        for dev in cfg.get("devices", []):
-            if dev.get("state") != "offline":
-                dev["state"] = new_state
-                dev["last_updated"] = int(time.time())
-        save_config(cfg)
-        return {"status": "ok", "device": {"name": "All Devices", "state": new_state}}
+        targets = devices
+    else:
+        targets = [d for d in devices
+                   if d["name"].lower() == dev_name_or_id.lower()
+                   or d["id"].lower() == dev_name_or_id.lower()]
 
-    found = False
-    target_dev = None
+    if not targets:
+        return {"status": "not_found", "error": f"Device '{dev_name_or_id}' not found"}
 
-    for dev in cfg.get("devices", []):
-        if dev["name"].lower() == dev_name_or_id.lower() or dev["id"].lower() == dev_name_or_id.lower():
+    changed, simulated, failures = [], 0, []
+    for dev in targets:
+        if dev.get("state") == "offline":
+            continue
+        backend = _device_backend(dev, cfg)
+        if backend is None:
+            # No backend configured: flip the local state only, and say so.
             dev["state"] = new_state
             dev["last_updated"] = int(time.time())
-            target_dev = dev
-            found = True
-            break
+            simulated += 1
+            changed.append(dev)
+            continue
+        try:
+            backend(new_state)
+            dev["state"] = new_state
+            dev["last_updated"] = int(time.time())
+            changed.append(dev)
+        except Exception as e:
+            failures.append({"device": dev.get("name"), "error": str(e)})
 
-    if found:
+    if changed:
         save_config(cfg)
-        return {"status": "ok", "device": target_dev}
-    return {"status": "not_found", "error": f"Device '{dev_name_or_id}' not found"}
+
+    out = {"status": "ok" if changed and not failures else "error"}
+    out["device"] = (changed[0] if len(changed) == 1
+                     else {"name": "All Devices", "state": new_state})
+    if simulated and not failures:
+        out["simulated"] = True
+    if failures:
+        out["failures"] = failures
+        out["error"] = "; ".join(
+            f"{f['device']}: {f['error']}" for f in failures)
+    return out
 
 
 def toggle_device(dev_name_or_id):
@@ -204,6 +279,9 @@ def collect_status():
     return {
         "home_id": cfg.get("home_id", ""),
         "home_url": cfg.get("home_url", DEFAULT_HOME_URL),
+        # True when at least one device has a real backend configured;
+        # without it the toggles are clearly-labeled local simulation.
+        "live": any(_device_backend(d, cfg) for d in devices),
         "timestamp": int(time.time()),
         "summary": {
             "text": top_text,
