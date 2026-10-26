@@ -841,12 +841,16 @@ class NotchBar extends PanelMenu.Button {
             if (!this._dragging && Math.hypot(dx, dy) > 5) {
                 this._dragging = true;
                 this._cancelHoverTimers();
+                this._cancelAmbTimer();
+                this._applyDraggingStyle();
             }
             if (this._dragging) {
                 const curX = this._dragInitActorX + dx;
                 const curY = Math.max(0, this._dragInitActorY + dy);
+                // position only — any restyle or resize here runs outside the
+                // layout pass and leaves stale ghost frames on screen
+                this._lastDragMotion = Date.now();
                 this.set_position(curX, curY);
-                this._applyDraggingStyle();
                 return Clutter.EVENT_STOP;
             }
         }
@@ -875,6 +879,11 @@ class NotchBar extends PanelMenu.Button {
                 saveConfig(this._app.cfg);
 
                 this._applyPillStyle();
+                this._scheduleAmbientBreath();
+                // content/size churn was frozen during the drag; rebuild and
+                // place the pill at its new saved position now
+                this.render();
+                this._recenter();
                 if (Main.layoutManager._queueUpdateRegions)
                     Main.layoutManager._queueUpdateRegions();
                 return Clutter.EVENT_STOP;
@@ -957,6 +966,8 @@ class NotchBar extends PanelMenu.Button {
     _scheduleAmbientBreath() {
         this._cancelAmbTimer();
         const step = () => {
+            if (this._dragging)
+                return GLib.SOURCE_CONTINUE; // drag keeps the glow hidden
             this._ambUp = !this._ambUp;
             const hi = this._ambUp;
             this._ambGlow.ease({
@@ -1030,6 +1041,8 @@ class NotchBar extends PanelMenu.Button {
     }
 
     _applyRestingSize() {
+        if (this._dragging)
+            return;
         // measure the content at natural size first so new chips widen the
         // pill, then pin the box to the full inner width so the spacer can
         // push the clock to the right edge
@@ -1046,6 +1059,8 @@ class NotchBar extends PanelMenu.Button {
     }
 
     _recenter() {
+        if (this._dragging)
+            return; // the width-notify hook must not fight the drag
         const m = Main.layoutManager.primaryMonitor;
         if (!m)
             return;
@@ -1075,6 +1090,8 @@ class NotchBar extends PanelMenu.Button {
     }
 
     _recenterAnimated(dur = 260) {
+        if (this._dragging)
+            return;
         const m = Main.layoutManager.primaryMonitor;
         if (!m)
             return;
@@ -1226,6 +1243,11 @@ class NotchBar extends PanelMenu.Button {
     // Rebuild both layers only when something meaningful changed; the clock
     // and countdowns tick in place so the eyes animation is never disturbed.
     render() {
+        // resizing/tearing down children mid-drag moves the actor outside the
+        // allocation pass — Clutter then skips damage updates and stale ghost
+        // frames of the pill stay painted on screen. Freeze until release.
+        if (this._dragging)
+            return;
         const sig = this._stateSig();
         if (sig === this._lastSig)
             return;
@@ -4119,6 +4141,15 @@ class NotchApp {
     /* ----- 1s tick ----- */
 
     _tick() {
+        // watchdog: if a drag somehow never saw BUTTON_RELEASE, unfreeze
+        if (this._dragging && Date.now() - (this._lastDragMotion || 0) > 3000) {
+            this._dragging = false;
+            this._dragCandidate = false;
+            this._applyPillStyle();
+            this._scheduleAmbientBreath();
+            this._lastSig = null;
+            this.render();
+        }
         this._sysTick = (this._sysTick || 0) + 1;
         if (this._sysTick % 3 === 0)
             this._pollSys();
